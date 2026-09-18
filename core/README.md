@@ -104,11 +104,50 @@ python core/tools/freeze_golden.py --per-month 60   # 抽得更多
 core/
 ├─ domain/profit.py           三段口径的实现（纯函数,可单测）
 ├─ repository/base.py         数据来源接口 —— 「DB 可替换」的落点
+│                             （逐单输入 + 只读聚合，后者供看板使用）
 ├─ repository/sqlite_source.py   现有 SQLite 实现（只读）
 ├─ repository/fixture_source.py  夹具实现（CI 用）
 ├─ tools/freeze_golden.py     从生产库冻结黄金样本
 └─ tests/test_profit_golden.py   回归测试
 ```
+
+## 只读聚合查询（看板用，2026-09 新增）
+
+原来的 `ProfitDataSource` 只有逐单取数。看板需要「近 N 天合计 / 按天汇总 /
+订单列表 / 逾期单数」，这些查询**加在 repository 层，不是加在 API 层** ——
+一旦把 SQL 写进 API，就又会退化成「Web 层自建一套模型」的老路。
+
+| 方法 | 返回 | 用途 |
+|---|---|---|
+| `data_cutoff(alias)` | `DataCutoff` | 库里最后一个可观测写入时间 |
+| `orders_for_period(alias, start, end, limit, offset)` | `Sequence[PeriodOrderRow]` | **看板权威路径**：一次取齐窗口内每个订单喂给 `evaluate_actual`/`evaluate_estimated` 的全部输入 |
+| `amounts_for_period(alias, start, end)` | `PeriodAmounts` | 廉价路径：一次 SQL 扫描出窗口合计（对账/告警） |
+| `daily_amounts(alias, start, end)` | `Sequence[DailyAmounts]` | 廉价路径：按天汇总 |
+| `overdue_count(alias)` | `OverdueInfo` | 逾期单数 |
+| `direct_net_totals(alias, start, end)` | `dict` | 直接净额逐单取数与汇率（各单汇率不同，必须先折算再相加） |
+
+约定：
+
+* **窗口由锁定结算快照的 `settlement_date` 界定**。它一旦锁定就不再变化，
+  所以同一订单重复查询的落点稳定；按订单创建时间会让同一单在不同窗口里跳。
+* 没有锁定快照的订单不属于任何窗口（既不算实际利润，也不算预估利润）。
+* 日期按 `YYYY-MM-DD` 字符串比较。
+* 聚合方法**不含利润口径**。`PeriodAmounts.actual_profit_cny` 只累加库里
+  `actual_complete=1` 的订单 —— 该列的语义与 `evaluate_actual` 的完整性规则一致，
+  由 `test_profit_golden.py` 逐单核对过（全库 6668 单，0 处不符）。
+* 廉价路径走 SQL 的 `CAST(... AS REAL)` 聚合，会有浮点噪声
+  （实测 `46082.29` 会算成 `46082.2900000000005`），所以统一用
+  `quantize_cny` 收敛到分再返回。它与逐单精算路径的一致性由
+  `api/tests/test_api.py::test_cheap_aggregate_methods_agree_with_order_level_path`
+  把关 —— 这条测试在开发中真的抓到一个 bug：按 `estimated_complete=1` 过滤会把
+  窗口内约 56% 的订单挡掉，让按天合计只有总计的 44%。
+* `FixtureSource` 的 `overdue_count` **抛 `NotImplementedError`**：
+  夹具没冻结 `overdue_fast_*` 扫描数据，而逾期是「当前态」不是历史事实。
+  返回 0 会变成伪装成成功的错误，所以宁可抛错。
+
+新增的 `core/domain/profit.sum_amounts(values)` 是唯一的求和定义
+（跳过 `None`，**不当作 0**），仓储层与 API 层都经它汇总，
+避免一处跳过、一处补 0 的分歧。它只是求和工具，不是利润口径。
 
 ## 尚未实现（诚实清单）
 
@@ -117,3 +156,8 @@ core/
   广告数据在店铺级的 `advertising_daily_facts` / `advertising_month_snapshots`,需业务确认是否应计入。
 - **汇率取值优先级**（§7.5）：目前直接采用结算快照里的汇率,未实现「三级来源优先级」。
 - **换 PostgreSQL**：接口已就位,但尚未写第二个实现。
+- **平台费用单独口径**：`postings.estimated_platform_fee_cny` 全库为空，
+  `platform_fees_cny` 只有 547/10903 单有值。看板的「平台费用」构成项目前只能折 0，
+  待业务确认权威来源字段（详见 `api/README.md` §8.2）。
+- **按 SKU / 商品维度的聚合**：`posting_items` / `sku_cost_cache` 已在库里，
+  但 repository 层还没有对应查询方法。

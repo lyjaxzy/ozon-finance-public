@@ -1,0 +1,39 @@
+{
+  "_comment": "mock 用户，不是真实用户表。口令以 pbkdf2_sha256 存哈希，口令原文见 api/README.md。",
+  "users": [
+    {
+      "username": "admin",
+      "display_name": "系统管理员",
+      "role": "root",
+      "store_aliases": [],
+      "allowed_actions": [
+        "*"
+      ],
+      "password_hash": "pbkdf2_sha256$200000$admin-salt$8cdda19b6ec1e47d4e7acd2f8ae68a84312c4c893e0b24fe18cc3cfeb5c7f50f"
+    },
+    {
+      "username": "finance01",
+      "display_name": "财务 01",
+      "role": "finance",
+      "store_aliases": [
+        "store_alpha"
+      ],
+      "allowed_actions": [
+        "dashboard:read"
+      ],
+      "password_hash": "pbkdf2_sha256$200000$finance01-salt$2cb7d624fcdfe39c956ddb98e0f713af05d1ebc13d75240c056b94548d5a27ba"
+    },
+    {
+      "username": "operator01",
+      "display_name": "店铺运营 01",
+      "role": "store_operator",
+      "store_aliases": [
+        "store_alpha"
+      ],
+      "allowed_actions": [
+        "dashboard:read"
+      ],
+      "password_hash": "pbkdf2_sha256$200000$operator01-salt$954c7ba49d83c4f00a3197bcd4be5cab77f8ca7ddd9f931e800d43eacfa7c6f3"
+    }
+  ]
+}

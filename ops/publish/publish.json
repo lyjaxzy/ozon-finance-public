@@ -1,9 +1,7 @@
 {
   "version": 1,
   "_comment": "公开仓库的内容白名单。fail-closed：只有列在这里的路径会被复制，新增文件默认不公开。",
-
   "output_dir": "D:\\OzonFinancePublish\\ozon-finance-public",
-
   "include": [
     ".gitattributes",
     ".gitignore",
@@ -18,28 +16,53 @@
     "docs/adr/*.md",
     "ops/backup/*",
     "ops/publish/*",
-    "06-Web重构/**"
+    "06-Web重构/**",
+    "api/**",
+    "web/**",
+    "!web/node_modules/**",
+    "!web/dist/**"
   ],
-
   "exclude": [
     "core/tests/fixtures/golden_sample.json",
     "06-Web重构/frontend/node_modules/**",
     "06-Web重构/backend/ozon_dashboard.db",
     "06-Web重构/backend/**/__pycache__/**"
   ],
-
   "_sanitize_comment": "字面替换：把私密信息换成占位符或虚构值。正则替换（订单号→FAKE-xxx）见 build 脚本。",
   "sanitize_literals": [
-    { "from": "C:\\ProgramData\\OzonFinance", "to": "<DATA_ROOT>" },
-    { "from": "<DATA_ROOT>", "to": "<DATA_ROOT>" },
-    { "from": "\\ProgramData\\OzonFinance", "to": "<DATA_ROOT>" },
-    { "from": "store_alpha", "to": "store_alpha" },
-    { "from": "store_beta", "to": "store_beta" },
-    { "from": "you@example.com", "to": "you@example.com" },
-    { "from": "you@example.com", "to": "you@example.com" },
-    { "from": "KNOWN_STALE_ESTIMATED = set()  # 公开子集：真实过期派生值清单不入库", "to": "KNOWN_STALE_ESTIMATED = set()  # 公开子集：真实过期派生值清单不入库" }
+    {
+      "from": "C:\\ProgramData\\OzonFinance",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "<DATA_ROOT>",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "\\ProgramData\\OzonFinance",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "store_alpha",
+      "to": "store_alpha"
+    },
+    {
+      "from": "store_beta",
+      "to": "store_beta"
+    },
+    {
+      "from": "you@example.com",
+      "to": "you@example.com"
+    },
+    {
+      "from": "you@example.com",
+      "to": "you@example.com"
+    },
+    {
+      "from": "KNOWN_STALE_ESTIMATED = set()  # 公开子集：真实过期派生值清单不入库",
+      "to": "KNOWN_STALE_ESTIMATED = set()  # 公开子集：真实过期派生值清单不入库"
+    }
   ],
-
   "_synthetic_comment": "公开仓库的夹具由合成数据生成：结构相同、数值全假。真实对账在私密仓库做。",
   "synthetic_fixture": {
     "enabled": true,
@@ -47,7 +70,6 @@
     "orders": 24,
     "seed": 20260918
   },
-
   "leak_patterns": {
     "真实订单号": "\\b\\d{7,}-\\d{4}-\\d{1,2}\\b",
     "授权绕过标记": "STUB_LICENSE|message_only_edition_enabled|license_required|native_license",
@@ -56,7 +78,6 @@
     "真实店铺别名": "store_alpha|store_beta",
     "个人邮箱": "529123352@qq\\.com|lyjaxzy@users\\.noreply\\.github\\.com"
   },
-
   "_leak_scan_skip_comment": "唯一的豁免：本配置文件自身就包含上面那些模式定义，扫描它必然自指误报。该文件只含正则字符串，不含任何真实数据。除此之外不应再添加豁免。",
   "leak_scan_skip": [
     "ops/publish/publish.json"

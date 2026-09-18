@@ -1,0 +1,7 @@
+{
+  "code": 200,
+  "data": {
+    "dashboard": ["refresh", "export"]
+  },
+  "msg": "成功"
+}
