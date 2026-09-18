@@ -19,6 +19,19 @@ MODE="${1:-commit}"
 MAIN_BRANCH="main"
 
 branch=$(git symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+gitdir=$(git rev-parse --git-dir 2>/dev/null || echo ".git")
+
+# ── 0. 合并进行中 → 按合并模式处理 ───────────────────────────────────
+# 为什么需要这段（实测踩到过）：
+#   完成合并有两条路径 —— `git merge --continue` 与直接 `git commit`。
+#   前者调用 pre-merge-commit（模式已是 merge）；
+#   后者调用的是 **pre-commit**（模式为 commit），于是分支守卫会以
+#   「拒绝在 main 上提交」为由把合并拦下，且理由看起来与合并无关，很难查。
+#   这里的 MERGE_HEAD 判断是可靠的：pre-commit 被调用时它**已经写入**
+#   （而 pre-merge-commit 阶段它尚未写入，所以那种场景不能用 —— 见 pre-merge-commit 的注释）。
+if [ "$MODE" = "commit" ] && [ -f "$gitdir/MERGE_HEAD" ]; then
+    MODE="merge"
+fi
 
 # ── 1. 分支守卫：不允许在 main 上直接提交 ────────────────────────────
 if [ "$MODE" = "commit" ] && [ "$branch" = "$MAIN_BRANCH" ]; then
