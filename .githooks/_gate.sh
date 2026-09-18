@@ -80,25 +80,30 @@ PYTHONIOENCODING=utf-8
 export PYTHONIOENCODING
 
 # ── 3. 测试门禁 ──────────────────────────────────────────────────────
+# 两套测试都要过：
+#   core —— 财务口径回归（夹具；合并/推送时跑生产库全量对账）
+#   api  —— 只读看板接口（含 401/403 越权与口径一致性）
 if [ "$MODE" = "push" ]; then
-    echo "[gate] 推送到远端 —— 完整回归（夹具 + 生产库全量对账）"
-    echo "[gate] 推送是不可逆动作，一律跑全套，不做快速档"
-    echo "[gate] $PY -m unittest core.tests.test_profit_golden"
-    echo
-    "$PY" -m unittest core.tests.test_profit_golden
-    rc=$?
+    echo "[gate] 推送到远端 —— 完整回归（core 全量 + API）"
+    CORE_TARGET="core.tests.test_profit_golden"
 elif [ "$MODE" = "merge" ]; then
-    echo "[gate] 合并进 $MAIN_BRANCH —— 完整回归（夹具 + 生产库全量对账）"
-    echo "[gate] $PY -m unittest core.tests.test_profit_golden"
-    echo
-    "$PY" -m unittest core.tests.test_profit_golden
-    rc=$?
+    echo "[gate] 合并进 $MAIN_BRANCH —— 完整回归（core 全量 + API）"
+    CORE_TARGET="core.tests.test_profit_golden"
 else
-    echo "[gate] $branch 分支提交 —— 快速回归（夹具）"
-    echo "[gate] $PY -m unittest core.tests.test_profit_golden.GoldenFixtureTest"
-    echo
-    "$PY" -m unittest core.tests.test_profit_golden.GoldenFixtureTest
-    rc=$?
+    echo "[gate] $branch 分支提交 —— 快速回归（core 夹具 + API）"
+    CORE_TARGET="core.tests.test_profit_golden.GoldenFixtureTest"
+fi
+
+rc=0
+
+echo "[gate] $PY -m unittest $CORE_TARGET"
+"$PY" -m unittest $CORE_TARGET
+rc=$?
+
+echo "[gate] $PY -m unittest discover -s api/tests -t ."
+"$PY" -m unittest discover -s api/tests -t .
+if [ $? -ne 0 ]; then
+    [ "$rc" -eq 0 ] && rc=1
 fi
 
 if [ "$rc" -ne 0 ]; then
@@ -110,6 +115,8 @@ if [ "$rc" -ne 0 ]; then
         git commit --no-verify
     合并被拒时请先清理现场：
         git merge --abort
+    API 测试失败时可直接单跑：
+        $PY -m unittest discover -s api/tests -t .
 
 EOF
     exit "$rc"

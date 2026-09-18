@@ -134,6 +134,27 @@ def rate_is_valid(rate: Optional[Decimal]) -> bool:
     return rate is not None and MIN_EXCHANGE_RATE <= rate <= MAX_EXCHANGE_RATE
 
 
+def sum_amounts(values: Iterable[Optional[Decimal]], default=ZERO) -> Decimal:
+    """把一批 Decimal 求和；None 与非法值一律跳过，**不当作 0 参与**。
+
+    存在的理由是「汇总口径一致性」：仓储层与 API 层汇总时若各自手写
+    `sum(...)` / `if v is not None`，很容易出现一处跳过、一处补 0 的分歧。
+    汇总额一律经过这个函数，行为就只有一个定义。
+
+    注意：这只是求和工具，不是利润口径。§7.1/§7.2/§7.3 的计算仍然只能
+    走 evaluate_actual / evaluate_estimated / completion_rate。
+    """
+    total = default
+    for v in values:
+        if v is None:
+            continue
+        amount = v if isinstance(v, Decimal) else to_decimal(v)
+        if amount is None:
+            continue
+        total += amount
+    return total
+
+
 # ── §7.1 实际利润 ────────────────────────────────────────────────
 def sum_direct_net(operations: Iterable[Operation]) -> Decimal:
     """按操作明细求和。缺金额的操作按 0 计入求和，但完整性由 evaluate_actual 判定。"""

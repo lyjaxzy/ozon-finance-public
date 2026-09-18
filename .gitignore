@@ -65,6 +65,9 @@ venv/
 
 # ── 8. 凭据与密钥（保险起见）
 .env
+# web/.env 是 Vite 构建期配置（只有 VITE_* 变量，Vite 会把 VITE_* 暴露给客户端），
+# 因此它天然不能放密钥，应当入库 —— 否则新克隆的仓库构建会失败。
+!web/.env
 !*.env.example
 *credentials*.json
 *client_secret*
@@ -84,3 +87,10 @@ desktop.ini
 !03-文档/**/*.docx
 !03-文档/**/*.xlsx
 !03-文档/**/*.png
+
+# ── 11. 前端（web/ 是 vendor 进来的 Geeker-Admin 脚手架）
+web/node_modules/
+web/dist/
+web/.vite/
+web/stats.html
+web/*.local
