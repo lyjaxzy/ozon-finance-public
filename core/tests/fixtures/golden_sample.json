@@ -1,0 +1,2034 @@
+{
+ "meta": {
+  "schema_version": 1,
+  "source": "【合成数据】由 ops/publish/build_public_tree.py 生成，不含任何真实业务数据",
+  "note": "⚠️ 期望值由同一套实现计算，属自证；本夹具只验证代码结构，不验证口径正确性。",
+  "per_month": 24,
+  "months": 1,
+  "order_count": 24,
+  "missing_operations": 0
+ },
+ "completion_rate": {
+  "total": 24,
+  "actual_complete": 24,
+  "estimated_complete": 24
+ },
+ "orders": [
+  {
+   "posting_number": "FAKE-923334-5047",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-6.62",
+    "direct_net_rub": "402.27",
+    "settled_sales_rub": "601.92",
+    "exchange_rate_rub_per_cny": "12.0778",
+    "purchase_cost_cny": "39.93",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "4.02",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000000",
+     "70000000001",
+     "70000000002"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "402.27",
+    "settled_sales_rub": "601.92",
+    "exchange_rate_rub_per_cny": "12.0778",
+    "purchase_cost_cny": "39.93",
+    "actual_profit_cny": "-6.62",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000000",
+     "70000000001",
+     "70000000002"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "57.25",
+    "purchase_cost_cny": "39.93",
+    "logistics_cost_cny": "12.05",
+    "estimated_platform_fee_cny": "1.25",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "4.02",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-000",
+     "sku": "100000000",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000000",
+     "posting_number": "FAKE-923334-5047",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "529.69"
+    },
+    {
+     "operation_id": "70000000001",
+     "posting_number": "FAKE-923334-5047",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000002",
+     "posting_number": "FAKE-923334-5047",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-112.42"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-867668-1795",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "23.57",
+    "direct_net_rub": "297.09",
+    "settled_sales_rub": "408.2",
+    "exchange_rate_rub_per_cny": "9.8418",
+    "purchase_cost_cny": "6.62",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "-5.99",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000004",
+     "70000000005",
+     "70000000006"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "297.09",
+    "settled_sales_rub": "408.2",
+    "exchange_rate_rub_per_cny": "9.8418",
+    "purchase_cost_cny": "6.62",
+    "actual_profit_cny": "23.57",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000004",
+     "70000000005",
+     "70000000006"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "13.25",
+    "purchase_cost_cny": "6.62",
+    "logistics_cost_cny": "12.62",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "-5.99",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-001",
+     "sku": "100000001",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000004",
+     "posting_number": "FAKE-867668-1795",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "359.22"
+    },
+    {
+     "operation_id": "70000000005",
+     "posting_number": "FAKE-867668-1795",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000006",
+     "posting_number": "FAKE-867668-1795",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-47.13"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-632338-4742",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "1.4",
+    "direct_net_rub": "414.93",
+    "settled_sales_rub": "592.74",
+    "exchange_rate_rub_per_cny": "12.7666",
+    "purchase_cost_cny": "31.1",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "14.45",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000008",
+     "70000000009",
+     "70000000010"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "414.93",
+    "settled_sales_rub": "592.74",
+    "exchange_rate_rub_per_cny": "12.7666",
+    "purchase_cost_cny": "31.1",
+    "actual_profit_cny": "1.4",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000008",
+     "70000000009",
+     "70000000010"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "55.56",
+    "purchase_cost_cny": "31.1",
+    "logistics_cost_cny": "10.01",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "14.45",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-002",
+     "sku": "100000002",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000008",
+     "posting_number": "FAKE-632338-4742",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "521.61"
+    },
+    {
+     "operation_id": "70000000009",
+     "posting_number": "FAKE-632338-4742",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000010",
+     "posting_number": "FAKE-632338-4742",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-91.68"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-530987-1062",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "2.59",
+    "direct_net_rub": "144.86",
+    "settled_sales_rub": "276.89",
+    "exchange_rate_rub_per_cny": "9.8899",
+    "purchase_cost_cny": "12.06",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "-2.21",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000012",
+     "70000000013",
+     "70000000014"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "144.86",
+    "settled_sales_rub": "276.89",
+    "exchange_rate_rub_per_cny": "9.8899",
+    "purchase_cost_cny": "12.06",
+    "actual_profit_cny": "2.59",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000012",
+     "70000000013",
+     "70000000014"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "21.08",
+    "purchase_cost_cny": "12.06",
+    "logistics_cost_cny": "3.93",
+    "estimated_platform_fee_cny": "7.3",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "-2.21",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-003",
+     "sku": "100000003",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000012",
+     "posting_number": "FAKE-530987-1062",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "243.66"
+    },
+    {
+     "operation_id": "70000000013",
+     "posting_number": "FAKE-530987-1062",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000014",
+     "posting_number": "FAKE-530987-1062",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-83.8"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-536451-8964",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-12.51",
+    "direct_net_rub": "183.92",
+    "settled_sales_rub": "323.99",
+    "exchange_rate_rub_per_cny": "7.6923",
+    "purchase_cost_cny": "36.42",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "3.63",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000016",
+     "70000000017",
+     "70000000018"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "183.92",
+    "settled_sales_rub": "323.99",
+    "exchange_rate_rub_per_cny": "7.6923",
+    "purchase_cost_cny": "36.42",
+    "actual_profit_cny": "-12.51",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000016",
+     "70000000017",
+     "70000000018"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "47.29",
+    "purchase_cost_cny": "36.42",
+    "logistics_cost_cny": "0.25",
+    "estimated_platform_fee_cny": "6.99",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "3.63",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-004",
+     "sku": "100000004",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000016",
+     "posting_number": "FAKE-536451-8964",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "285.11"
+    },
+    {
+     "operation_id": "70000000017",
+     "posting_number": "FAKE-536451-8964",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000018",
+     "posting_number": "FAKE-536451-8964",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-86.19"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-789051-8294",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-7.07",
+    "direct_net_rub": "1.33",
+    "settled_sales_rub": "143.92",
+    "exchange_rate_rub_per_cny": "11.0316",
+    "purchase_cost_cny": "7.19",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "25.31",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000020",
+     "70000000021",
+     "70000000022"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "1.33",
+    "settled_sales_rub": "143.92",
+    "exchange_rate_rub_per_cny": "11.0316",
+    "purchase_cost_cny": "7.19",
+    "actual_profit_cny": "-7.07",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000020",
+     "70000000021",
+     "70000000022"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "41.88",
+    "purchase_cost_cny": "7.19",
+    "logistics_cost_cny": "9.38",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "25.31",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-005",
+     "sku": "100000005",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000020",
+     "posting_number": "FAKE-789051-8294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "126.65"
+    },
+    {
+     "operation_id": "70000000021",
+     "posting_number": "FAKE-789051-8294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000022",
+     "posting_number": "FAKE-789051-8294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-110.32"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-257335-1956",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "26.1",
+    "direct_net_rub": "606.2",
+    "settled_sales_rub": "744.05",
+    "exchange_rate_rub_per_cny": "10.9435",
+    "purchase_cost_cny": "29.29",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "5.97",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000024",
+     "70000000025",
+     "70000000026"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "606.2",
+    "settled_sales_rub": "744.05",
+    "exchange_rate_rub_per_cny": "10.9435",
+    "purchase_cost_cny": "29.29",
+    "actual_profit_cny": "26.1",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000024",
+     "70000000025",
+     "70000000026"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "49.48",
+    "purchase_cost_cny": "29.29",
+    "logistics_cost_cny": "14.22",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "5.97",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-006",
+     "sku": "100000006",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000024",
+     "posting_number": "FAKE-257335-1956",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "654.76"
+    },
+    {
+     "operation_id": "70000000025",
+     "posting_number": "FAKE-257335-1956",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000026",
+     "posting_number": "FAKE-257335-1956",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-33.56"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-424039-0630",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "20.0",
+    "direct_net_rub": "171.7",
+    "settled_sales_rub": "283.45",
+    "exchange_rate_rub_per_cny": "7.4374",
+    "purchase_cost_cny": "3.09",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "21.45",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000028",
+     "70000000029",
+     "70000000030"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "171.7",
+    "settled_sales_rub": "283.45",
+    "exchange_rate_rub_per_cny": "7.4374",
+    "purchase_cost_cny": "3.09",
+    "actual_profit_cny": "20.0",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000028",
+     "70000000029",
+     "70000000030"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "30.09",
+    "purchase_cost_cny": "3.09",
+    "logistics_cost_cny": "5.55",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "21.45",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-007",
+     "sku": "100000007",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000028",
+     "posting_number": "FAKE-424039-0630",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "249.44"
+    },
+    {
+     "operation_id": "70000000029",
+     "posting_number": "FAKE-424039-0630",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000030",
+     "posting_number": "FAKE-424039-0630",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-62.74"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-651445-8104",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-16.33",
+    "direct_net_rub": "26.04",
+    "settled_sales_rub": "126.57",
+    "exchange_rate_rub_per_cny": "6.6862",
+    "purchase_cost_cny": "20.22",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "3.47",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000032",
+     "70000000033",
+     "70000000034"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "26.04",
+    "settled_sales_rub": "126.57",
+    "exchange_rate_rub_per_cny": "6.6862",
+    "purchase_cost_cny": "20.22",
+    "actual_profit_cny": "-16.33",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000032",
+     "70000000033",
+     "70000000034"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "36.61",
+    "purchase_cost_cny": "20.22",
+    "logistics_cost_cny": "6.85",
+    "estimated_platform_fee_cny": "6.07",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "3.47",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-008",
+     "sku": "100000008",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000032",
+     "posting_number": "FAKE-651445-8104",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "111.38"
+    },
+    {
+     "operation_id": "70000000033",
+     "posting_number": "FAKE-651445-8104",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000034",
+     "posting_number": "FAKE-651445-8104",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-70.34"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-394228-9294",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "16.78",
+    "direct_net_rub": "403.15",
+    "settled_sales_rub": "591.34",
+    "exchange_rate_rub_per_cny": "12.9097",
+    "purchase_cost_cny": "14.45",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "2.79",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000036",
+     "70000000037",
+     "70000000038"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "403.15",
+    "settled_sales_rub": "591.34",
+    "exchange_rate_rub_per_cny": "12.9097",
+    "purchase_cost_cny": "14.45",
+    "actual_profit_cny": "16.78",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000036",
+     "70000000037",
+     "70000000038"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "24.06",
+    "purchase_cost_cny": "14.45",
+    "logistics_cost_cny": "6.82",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "2.79",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-009",
+     "sku": "100000009",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000036",
+     "posting_number": "FAKE-394228-9294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "520.38"
+    },
+    {
+     "operation_id": "70000000037",
+     "posting_number": "FAKE-394228-9294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000038",
+     "posting_number": "FAKE-394228-9294",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-102.23"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-593701-2921",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "39.54",
+    "direct_net_rub": "573.77",
+    "settled_sales_rub": "739.59",
+    "exchange_rate_rub_per_cny": "10.5875",
+    "purchase_cost_cny": "14.65",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "32.23",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000040",
+     "70000000041",
+     "70000000042"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "573.77",
+    "settled_sales_rub": "739.59",
+    "exchange_rate_rub_per_cny": "10.5875",
+    "purchase_cost_cny": "14.65",
+    "actual_profit_cny": "39.54",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000040",
+     "70000000041",
+     "70000000042"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "49.39",
+    "purchase_cost_cny": "14.65",
+    "logistics_cost_cny": "2.51",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "32.23",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-010",
+     "sku": "100000010",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000040",
+     "posting_number": "FAKE-593701-2921",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "650.84"
+    },
+    {
+     "operation_id": "70000000041",
+     "posting_number": "FAKE-593701-2921",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000042",
+     "posting_number": "FAKE-593701-2921",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-62.07"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-817421-4544",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-7.45",
+    "direct_net_rub": "86.05",
+    "settled_sales_rub": "207.12",
+    "exchange_rate_rub_per_cny": "8.4781",
+    "purchase_cost_cny": "17.6",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "-5.23",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000044",
+     "70000000045",
+     "70000000046"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "86.05",
+    "settled_sales_rub": "207.12",
+    "exchange_rate_rub_per_cny": "8.4781",
+    "purchase_cost_cny": "17.6",
+    "actual_profit_cny": "-7.45",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000044",
+     "70000000045",
+     "70000000046"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "25.09",
+    "purchase_cost_cny": "17.6",
+    "logistics_cost_cny": "12.72",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "-5.23",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-011",
+     "sku": "100000011",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000044",
+     "posting_number": "FAKE-817421-4544",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "182.27"
+    },
+    {
+     "operation_id": "70000000045",
+     "posting_number": "FAKE-817421-4544",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000046",
+     "posting_number": "FAKE-817421-4544",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-81.22"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-019123-0736",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "44.57",
+    "direct_net_rub": "574.13",
+    "settled_sales_rub": "754.76",
+    "exchange_rate_rub_per_cny": "11.6631",
+    "purchase_cost_cny": "4.66",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "6.75",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000048",
+     "70000000049",
+     "70000000050"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "574.13",
+    "settled_sales_rub": "754.76",
+    "exchange_rate_rub_per_cny": "11.6631",
+    "purchase_cost_cny": "4.66",
+    "actual_profit_cny": "44.57",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000048",
+     "70000000049",
+     "70000000050"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "17.47",
+    "purchase_cost_cny": "4.66",
+    "logistics_cost_cny": "3.29",
+    "estimated_platform_fee_cny": "2.77",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "6.75",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-012",
+     "sku": "100000012",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000048",
+     "posting_number": "FAKE-019123-0736",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "664.19"
+    },
+    {
+     "operation_id": "70000000049",
+     "posting_number": "FAKE-019123-0736",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000050",
+     "posting_number": "FAKE-019123-0736",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-75.06"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-215894-9384",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-4.27",
+    "direct_net_rub": "196.41",
+    "settled_sales_rub": "289.04",
+    "exchange_rate_rub_per_cny": "10.6068",
+    "purchase_cost_cny": "22.79",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "3.95",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000052",
+     "70000000053",
+     "70000000054"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "196.41",
+    "settled_sales_rub": "289.04",
+    "exchange_rate_rub_per_cny": "10.6068",
+    "purchase_cost_cny": "22.79",
+    "actual_profit_cny": "-4.27",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000052",
+     "70000000053",
+     "70000000054"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "30.16",
+    "purchase_cost_cny": "22.79",
+    "logistics_cost_cny": "0.82",
+    "estimated_platform_fee_cny": "2.6",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "3.95",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-013",
+     "sku": "100000013",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000052",
+     "posting_number": "FAKE-215894-9384",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "254.36"
+    },
+    {
+     "operation_id": "70000000053",
+     "posting_number": "FAKE-215894-9384",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000054",
+     "posting_number": "FAKE-215894-9384",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-42.95"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-549133-4186",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "31.3",
+    "direct_net_rub": "425.89",
+    "settled_sales_rub": "572.94",
+    "exchange_rate_rub_per_cny": "9.2643",
+    "purchase_cost_cny": "14.67",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "11.79",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000056",
+     "70000000057",
+     "70000000058"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "425.89",
+    "settled_sales_rub": "572.94",
+    "exchange_rate_rub_per_cny": "9.2643",
+    "purchase_cost_cny": "14.67",
+    "actual_profit_cny": "31.3",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000056",
+     "70000000057",
+     "70000000058"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "31.2",
+    "purchase_cost_cny": "14.67",
+    "logistics_cost_cny": "4.1",
+    "estimated_platform_fee_cny": "0.64",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "11.79",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-014",
+     "sku": "100000014",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000056",
+     "posting_number": "FAKE-549133-4186",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "504.19"
+    },
+    {
+     "operation_id": "70000000057",
+     "posting_number": "FAKE-549133-4186",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000058",
+     "posting_number": "FAKE-549133-4186",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-63.3"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-463564-1753",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-2.55",
+    "direct_net_rub": "68.9",
+    "settled_sales_rub": "197.34",
+    "exchange_rate_rub_per_cny": "10.6211",
+    "purchase_cost_cny": "9.04",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "13.12",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000060",
+     "70000000061",
+     "70000000062"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "68.9",
+    "settled_sales_rub": "197.34",
+    "exchange_rate_rub_per_cny": "10.6211",
+    "purchase_cost_cny": "9.04",
+    "actual_profit_cny": "-2.55",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000060",
+     "70000000061",
+     "70000000062"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "36.44",
+    "purchase_cost_cny": "9.04",
+    "logistics_cost_cny": "14.28",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "13.12",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-015",
+     "sku": "100000015",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000060",
+     "posting_number": "FAKE-463564-1753",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "173.66"
+    },
+    {
+     "operation_id": "70000000061",
+     "posting_number": "FAKE-463564-1753",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000062",
+     "posting_number": "FAKE-463564-1753",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-89.76"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-968942-3948",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-7.98",
+    "direct_net_rub": "348.49",
+    "settled_sales_rub": "448.95",
+    "exchange_rate_rub_per_cny": "12.2015",
+    "purchase_cost_cny": "36.54",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "25.58",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000064",
+     "70000000065",
+     "70000000066"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "348.49",
+    "settled_sales_rub": "448.95",
+    "exchange_rate_rub_per_cny": "12.2015",
+    "purchase_cost_cny": "36.54",
+    "actual_profit_cny": "-7.98",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000064",
+     "70000000065",
+     "70000000066"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "72.02",
+    "purchase_cost_cny": "36.54",
+    "logistics_cost_cny": "9.41",
+    "estimated_platform_fee_cny": "0.49",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "25.58",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-016",
+     "sku": "100000016",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000064",
+     "posting_number": "FAKE-968942-3948",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "395.08"
+    },
+    {
+     "operation_id": "70000000065",
+     "posting_number": "FAKE-968942-3948",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000066",
+     "posting_number": "FAKE-968942-3948",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-31.59"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-028130-8206",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-12.01",
+    "direct_net_rub": "224.27",
+    "settled_sales_rub": "309.4",
+    "exchange_rate_rub_per_cny": "9.8097",
+    "purchase_cost_cny": "34.87",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "-3.07",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000068",
+     "70000000069",
+     "70000000070"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "224.27",
+    "settled_sales_rub": "309.4",
+    "exchange_rate_rub_per_cny": "9.8097",
+    "purchase_cost_cny": "34.87",
+    "actual_profit_cny": "-12.01",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000068",
+     "70000000069",
+     "70000000070"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "40.41",
+    "purchase_cost_cny": "34.87",
+    "logistics_cost_cny": "8.61",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "-3.07",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-017",
+     "sku": "100000017",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000068",
+     "posting_number": "FAKE-028130-8206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "272.27"
+    },
+    {
+     "operation_id": "70000000069",
+     "posting_number": "FAKE-028130-8206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000070",
+     "posting_number": "FAKE-028130-8206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-33.0"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-928000-3758",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-3.35",
+    "direct_net_rub": "156.24",
+    "settled_sales_rub": "240.18",
+    "exchange_rate_rub_per_cny": "11.928",
+    "purchase_cost_cny": "16.45",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "5.45",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000072",
+     "70000000073",
+     "70000000074"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "156.24",
+    "settled_sales_rub": "240.18",
+    "exchange_rate_rub_per_cny": "11.928",
+    "purchase_cost_cny": "16.45",
+    "actual_profit_cny": "-3.35",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000072",
+     "70000000073",
+     "70000000074"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "27.14",
+    "purchase_cost_cny": "16.45",
+    "logistics_cost_cny": "5.24",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "5.45",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-018",
+     "sku": "100000018",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000072",
+     "posting_number": "FAKE-928000-3758",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "211.36"
+    },
+    {
+     "operation_id": "70000000073",
+     "posting_number": "FAKE-928000-3758",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000074",
+     "posting_number": "FAKE-928000-3758",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-40.12"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-116245-3918",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "18.57",
+    "direct_net_rub": "488.71",
+    "settled_sales_rub": "654.26",
+    "exchange_rate_rub_per_cny": "12.6138",
+    "purchase_cost_cny": "20.17",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "28.23",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000076",
+     "70000000077",
+     "70000000078"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "488.71",
+    "settled_sales_rub": "654.26",
+    "exchange_rate_rub_per_cny": "12.6138",
+    "purchase_cost_cny": "20.17",
+    "actual_profit_cny": "18.57",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000076",
+     "70000000077",
+     "70000000078"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "58.9",
+    "purchase_cost_cny": "20.17",
+    "logistics_cost_cny": "10.5",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "28.23",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-019",
+     "sku": "100000019",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000076",
+     "posting_number": "FAKE-116245-3918",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "575.75"
+    },
+    {
+     "operation_id": "70000000077",
+     "posting_number": "FAKE-116245-3918",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000078",
+     "posting_number": "FAKE-116245-3918",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-72.04"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-167830-7089",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "67.75",
+    "direct_net_rub": "664.25",
+    "settled_sales_rub": "858.1",
+    "exchange_rate_rub_per_cny": "8.5297",
+    "purchase_cost_cny": "10.12",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "26.03",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000080",
+     "70000000081",
+     "70000000082"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "664.25",
+    "settled_sales_rub": "858.1",
+    "exchange_rate_rub_per_cny": "8.5297",
+    "purchase_cost_cny": "10.12",
+    "actual_profit_cny": "67.75",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000080",
+     "70000000081",
+     "70000000082"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "43.35",
+    "purchase_cost_cny": "10.12",
+    "logistics_cost_cny": "7.2",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "26.03",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-020",
+     "sku": "100000020",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000080",
+     "posting_number": "FAKE-167830-7089",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "755.13"
+    },
+    {
+     "operation_id": "70000000081",
+     "posting_number": "FAKE-167830-7089",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000082",
+     "posting_number": "FAKE-167830-7089",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-75.88"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-408090-4206",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "23.69",
+    "direct_net_rub": "532.19",
+    "settled_sales_rub": "721.74",
+    "exchange_rate_rub_per_cny": "8.5531",
+    "purchase_cost_cny": "38.53",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "17.7",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000084",
+     "70000000085",
+     "70000000086"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "532.19",
+    "settled_sales_rub": "721.74",
+    "exchange_rate_rub_per_cny": "8.5531",
+    "purchase_cost_cny": "38.53",
+    "actual_profit_cny": "23.69",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000084",
+     "70000000085",
+     "70000000086"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "63.32",
+    "purchase_cost_cny": "38.53",
+    "logistics_cost_cny": "7.09",
+    "estimated_platform_fee_cny": null,
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "17.7",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-021",
+     "sku": "100000021",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000084",
+     "posting_number": "FAKE-408090-4206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "635.13"
+    },
+    {
+     "operation_id": "70000000085",
+     "posting_number": "FAKE-408090-4206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000086",
+     "posting_number": "FAKE-408090-4206",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-87.94"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-488652-9298",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-17.83",
+    "direct_net_rub": "119.15",
+    "settled_sales_rub": "230.77",
+    "exchange_rate_rub_per_cny": "11.7931",
+    "purchase_cost_cny": "27.93",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "18.71",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000088",
+     "70000000089",
+     "70000000090"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "119.15",
+    "settled_sales_rub": "230.77",
+    "exchange_rate_rub_per_cny": "11.7931",
+    "purchase_cost_cny": "27.93",
+    "actual_profit_cny": "-17.83",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000088",
+     "70000000089",
+     "70000000090"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "52.99",
+    "purchase_cost_cny": "27.93",
+    "logistics_cost_cny": "2.22",
+    "estimated_platform_fee_cny": "4.13",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "18.71",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-022",
+     "sku": "100000022",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000088",
+     "posting_number": "FAKE-488652-9298",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "203.08"
+    },
+    {
+     "operation_id": "70000000089",
+     "posting_number": "FAKE-488652-9298",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000090",
+     "posting_number": "FAKE-488652-9298",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-68.93"
+    }
+   ]
+  },
+  {
+   "posting_number": "FAKE-137305-7515",
+   "order_month": "2026-01",
+   "status": "delivered",
+   "fact": {
+    "actual_profit_cny": "-5.82",
+    "direct_net_rub": "80.77",
+    "settled_sales_rub": "238.88",
+    "exchange_rate_rub_per_cny": "12.3162",
+    "purchase_cost_cny": "12.38",
+    "actual_complete": 1,
+    "actual_unknown_reason": null,
+    "estimated_profit_cny": "-3.67",
+    "estimated_complete": 1,
+    "linked_operation_count": 3,
+    "linked_operation_ids": [
+     "70000000092",
+     "70000000093",
+     "70000000094"
+    ],
+    "updated_at": "2026-01-02T00:00:00+00:00"
+   },
+   "settlement_snapshot": {
+    "settlement_date": "2026-01-01",
+    "state": "locked",
+    "direct_net_rub": "80.77",
+    "settled_sales_rub": "238.88",
+    "exchange_rate_rub_per_cny": "12.3162",
+    "purchase_cost_cny": "12.38",
+    "actual_profit_cny": "-5.82",
+    "unknown_reason": null,
+    "operation_count": 3,
+    "operation_ids": [
+     "70000000092",
+     "70000000093",
+     "70000000094"
+    ],
+    "locked_at": "2026-01-02T00:00:00+00:00"
+   },
+   "posting": {
+    "status": "delivered",
+    "revenue_cny": "25.84",
+    "purchase_cost_cny": "12.38",
+    "logistics_cost_cny": "10.26",
+    "estimated_platform_fee_cny": "6.87",
+    "platform_fees_cny": null,
+    "estimated_profit_cny": "-3.67",
+    "profit_included": 1,
+    "exclusion_reason": null
+   },
+   "items": [
+    {
+     "offer_id": "SYNTH-023",
+     "sku": "100000023",
+     "quantity": 1
+    }
+   ],
+   "operations": [
+    {
+     "operation_id": "70000000092",
+     "posting_number": "FAKE-137305-7515",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "SALE",
+     "operation_type": "OperationAgentDeliveredToCustomer",
+     "amount_rub": "210.21"
+    },
+    {
+     "operation_id": "70000000093",
+     "posting_number": "FAKE-137305-7515",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "AGENCY",
+     "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+     "amount_rub": "-15"
+    },
+    {
+     "operation_id": "70000000094",
+     "posting_number": "FAKE-137305-7515",
+     "occurred_at": "2026-01-01T00:00:00+00:00",
+     "operation_category": "LOGISTICS",
+     "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+     "amount_rub": "-114.44"
+    }
+   ]
+  }
+ ]
+}

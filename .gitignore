@@ -1,0 +1,86 @@
+# ═══════════════════════════════════════════════════════════════════
+# OZON 财务系统 —— 版本控制排除规则
+#
+# 原则：仓库只装「我们自己写的东西」——源码、文档、测试与夹具。
+# 大型第三方工具、逆向产物、构建输出、二进制、生产数据一律不入库。
+# 未纳入版本控制的内容清单与备份要求见 MANIFEST-未纳入版本控制.md
+# ═══════════════════════════════════════════════════════════════════
+
+# ── 1. 大型第三方 / 逆向材料（合计约 344 MB，不可再生，需单独备份）
+07-逆向工具/
+08-逆向材料/
+01-源码/disassembly/
+01-源码/decompiled_libs/
+
+# ── 2. 存档与备份（约 193 MB）
+99-存档/
+
+# ── 3. 构建产物与二进制（约 420 MB）
+*.exe
+*.dll
+*.pyd
+*.so
+02-运行程序/OzonFinance/
+**/build/
+**/build-onedir/
+**/dist/
+**/dist-onedir/
+**/dist-backend/
+**/dist-frontend/
+04-构建/ozon_finance/
+04-构建/ozon_finance_onefile/
+04-构建/ozon_finance_v2/
+*.spec.bak
+
+# ── 4. 构建日志与一次性转储
+*.log
+04-构建/create_app_dis.txt
+04-构建/exe_err.txt
+04-构建/exe_out.txt
+
+# ── 5. Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── 6. 前端
+06-Web重构/frontend/node_modules/
+06-Web重构/frontend/dist/
+06-Web重构/frontend/.vite/
+
+# ── 7. 数据库与数据（生产/测试数据绝不入库）
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+09-诊断记录/
+10-测试数据/
+02-运行程序/data/
+
+# ── 8. 凭据与密钥（保险起见）
+.env
+!*.env.example
+*credentials*.json
+*client_secret*
+*.pem
+*.key
+*.pfx
+
+# ── 9. 编辑器 / 系统 / Office 临时文件
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+~$*
+*.tmp
+
+# ── 10. 交付物例外：这些二进制文档是我们自己的成果，要入库
+!03-文档/**/*.docx
+!03-文档/**/*.xlsx
+!03-文档/**/*.png
