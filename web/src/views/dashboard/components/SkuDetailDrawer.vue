@@ -146,15 +146,15 @@
         @change="onPageChange"
       />
 
-      <!-- 明细表：空态与加载态都要有。限高内部滚动 —— 否则 100 条一页时
-           表格能到 4000px，翻页条会被顶到很远的地方 -->
+      <!-- 明细表：空态与加载态都要有。
+           ⚠️ 刻意**不设** max-height：抽屉内容由 `.el-drawer__body` 唯一负责竖向滚动，
+           否则鼠标在表格上时滚轮会先滚表格内部，用户以为「滚不到底部的翻页条」。 -->
       <el-table
         v-loading="loading"
         element-loading-text="正在取逐 SKU 明细…"
         :data="data.rows"
         stripe
         class="sku-table"
-        max-height="52vh"
         :default-sort="{ prop: sortProp, order: sortOrder }"
         @sort-change="onSortChange"
       >
@@ -596,6 +596,30 @@ watch(
 
   :deep(.el-drawer__body) {
     padding: 24px;
+    /* 抽屉内容由**这一个**容器负责竖向滚动（表格不再内部滚动，见模板注释），
+       并把滚动条画出来：否则 Windows 的覆盖式滚动条不悬停看不见 */
+    overflow-y: scroll;
+    scrollbar-width: thin;
+    scrollbar-color: var(--el-border-color-darker) var(--el-fill-color-light);
+
+    &::-webkit-scrollbar {
+      width: 14px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background-color: var(--el-fill-color-light);
+      border-left: 1px solid var(--el-border-color-lighter);
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--el-border-color-darker);
+      border: 3px solid var(--el-fill-color-light);
+      border-radius: 7px;
+
+      &:hover {
+        background-color: var(--el-text-color-secondary);
+      }
+    }
   }
 }
 

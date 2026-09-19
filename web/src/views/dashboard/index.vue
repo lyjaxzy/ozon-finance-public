@@ -222,13 +222,15 @@
           @update:page="page = $event"
           @change="onPageChange"
         />
+        <!-- ⚠️ 刻意**不设** max-height：表格有多高就多高，由页面（.el-main）唯一负责竖向滚动。
+             设了 max-height 就会出现「表格内部滚动条 + 页面滚动条」两个容器，
+             鼠标在表格上时滚轮先滚表格内部，用户会以为页面滚不动。 -->
         <el-table
           v-loading="loading"
           element-loading-text="正在取订单明细…"
           :data="orders"
           stripe
           class="order-table"
-          :max-height="ordersTableMaxHeight"
           :header-cell-style="{ textAlign: 'right' }"
         >
           <el-table-column prop="posting_number" label="订单号" min-width="150" align="left" fixed />
@@ -335,7 +337,7 @@ import {
 } from "@element-plus/icons-vue";
 import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, markRaw, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { handleUnauthorized, type BackendError } from "@/api/backendRequest";
@@ -429,34 +431,21 @@ const pageCount = computed(() => {
   return Math.max(1, Math.ceil(total / pageSize.value));
 });
 
-/* ------------------------- 按屏幕高度自适应 ------------------------- */
+/* ------------------------- 关于竖向滚动 ------------------------- */
 /**
- * 订单表的高度**按实际剩余空间算**，而不是写死 520px。
+ * 订单表**不设** `max-height`，由页面（`.el-main`）唯一负责竖向滚动。
  *
- * 为什么不用「视口高度 − 一个常数」：上方内容（页头 + 4 张指标卡 + 两个图表）
- * 的高度会随文案换行、屏幕宽度变化，写死常数一定会在大屏留白、小屏顶出翻页条。
- * 所以这里直接量「订单卡片顶部在**流内**的位置」——
- * `getBoundingClientRect().top - main.top + main.scrollTop` 与当前滚动位置无关，
- * 滚动到任何地方算出来的值都一样。
+ * 试过两版：
+ *   1. 写死 `max-height="520"` —— 大屏底部留一大片空白；
+ *   2. 按剩余空间自适应 `max-height` —— 空间利用好了，但**多了一个滚动容器**：
+ *      鼠标在表格上时滚轮先滚表格内部（那 7 行），要等它滚完页面才接手，
+ *      用户以为「页面滚不动、看不到底部的翻页条」（2026-09-19 的反馈）。
  *
- * 夹在 [300, 900]：300 保证至少看到 7~8 行；900 保证一行不会被拉得过长。
- * 如果上方内容本身就超过一屏，这里会落到下限，页面照常纵向滚动（这是内容决定的，
- * 不是布局 bug）。
+ * 所以最终选择「单一滚动容器」：表格有多高就多高（一页 20 行约 800px），
+ * 页面一路滚到底，右侧只有一个滚动条（样式见 layouts/components/Main/index.scss）。
+ * 代价是选 100 条/页时页面会很长 —— 这正是「表格上方那个紧凑翻页条」存在的理由：
+ * 不用滚到底也能翻页。
  */
-const ordersTableMaxHeight = ref(360);
-
-const recomputeOrdersTableHeight = () => {
-  const card = ordersCardRef.value;
-  const main = document.querySelector(".el-main") as HTMLElement | null;
-  if (!card || !main) return;
-  const mainRect = main.getBoundingClientRect();
-  const cardTopInFlow = card.getBoundingClientRect().top - mainRect.top + main.scrollTop;
-  // 卡片内部除表格之外的部分：卡片头 + 表格上方紧凑翻页条 + 表格下方完整翻页条 + 内边距
-  const chromeInsideCard = 150;
-  const bottomGap = 20;
-  const space = main.clientHeight - cardTopInFlow - chromeInsideCard - bottomGap;
-  ordersTableMaxHeight.value = Math.min(Math.max(Math.round(space), 300), 900);
-};
 
 /** 当前展示的响应（单店或合计），两者的公共字段形状一致 */
 const boardData = computed<ResDashboard | ResAggregate | null>(() =>
@@ -766,8 +755,6 @@ const loadData = async () => {
     ElMessage.error(e?.message ?? "看板数据加载失败");
   } finally {
     loading.value = false;
-    // 数据变了 → 卡片位置/指标卡文案高度都可能变，表格高度重算一次
-    nextTick(recomputeOrdersTableHeight);
   }
 };
 
@@ -857,13 +844,8 @@ watch(
 );
 
 onMounted(async () => {
-  window.addEventListener("resize", recomputeOrdersTableHeight);
   await loadData();
   maybeOpenDrilldown();
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", recomputeOrdersTableHeight);
 });
 </script>
 
