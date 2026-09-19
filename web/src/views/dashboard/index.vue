@@ -228,7 +228,7 @@
           :data="orders"
           stripe
           class="order-table"
-          :max-height="520"
+          :max-height="ordersTableMaxHeight"
           :header-cell-style="{ textAlign: 'right' }"
         >
           <el-table-column prop="posting_number" label="订单号" min-width="150" align="left" fixed />
@@ -335,7 +335,7 @@ import {
 } from "@element-plus/icons-vue";
 import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
-import { computed, markRaw, onMounted, ref, watch } from "vue";
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { handleUnauthorized, type BackendError } from "@/api/backendRequest";
@@ -428,6 +428,35 @@ const pageCount = computed(() => {
   const total = totals.value?.total_order_count ?? 0;
   return Math.max(1, Math.ceil(total / pageSize.value));
 });
+
+/* ------------------------- 按屏幕高度自适应 ------------------------- */
+/**
+ * 订单表的高度**按实际剩余空间算**，而不是写死 520px。
+ *
+ * 为什么不用「视口高度 − 一个常数」：上方内容（页头 + 4 张指标卡 + 两个图表）
+ * 的高度会随文案换行、屏幕宽度变化，写死常数一定会在大屏留白、小屏顶出翻页条。
+ * 所以这里直接量「订单卡片顶部在**流内**的位置」——
+ * `getBoundingClientRect().top - main.top + main.scrollTop` 与当前滚动位置无关，
+ * 滚动到任何地方算出来的值都一样。
+ *
+ * 夹在 [300, 900]：300 保证至少看到 7~8 行；900 保证一行不会被拉得过长。
+ * 如果上方内容本身就超过一屏，这里会落到下限，页面照常纵向滚动（这是内容决定的，
+ * 不是布局 bug）。
+ */
+const ordersTableMaxHeight = ref(360);
+
+const recomputeOrdersTableHeight = () => {
+  const card = ordersCardRef.value;
+  const main = document.querySelector(".el-main") as HTMLElement | null;
+  if (!card || !main) return;
+  const mainRect = main.getBoundingClientRect();
+  const cardTopInFlow = card.getBoundingClientRect().top - mainRect.top + main.scrollTop;
+  // 卡片内部除表格之外的部分：卡片头 + 表格上方紧凑翻页条 + 表格下方完整翻页条 + 内边距
+  const chromeInsideCard = 150;
+  const bottomGap = 20;
+  const space = main.clientHeight - cardTopInFlow - chromeInsideCard - bottomGap;
+  ordersTableMaxHeight.value = Math.min(Math.max(Math.round(space), 300), 900);
+};
 
 /** 当前展示的响应（单店或合计），两者的公共字段形状一致 */
 const boardData = computed<ResDashboard | ResAggregate | null>(() =>
@@ -737,6 +766,8 @@ const loadData = async () => {
     ElMessage.error(e?.message ?? "看板数据加载失败");
   } finally {
     loading.value = false;
+    // 数据变了 → 卡片位置/指标卡文案高度都可能变，表格高度重算一次
+    nextTick(recomputeOrdersTableHeight);
   }
 };
 
@@ -826,8 +857,13 @@ watch(
 );
 
 onMounted(async () => {
+  window.addEventListener("resize", recomputeOrdersTableHeight);
   await loadData();
   maybeOpenDrilldown();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", recomputeOrdersTableHeight);
 });
 </script>
 
