@@ -1,9 +1,50 @@
+/**
+ * 主内容区（`.el-main`）—— 全站唯一的竖向滚动容器。
+ *
+ * 2026-09-19 修正（用户反馈「缩放到 50% 才能看全，滚轮滚不到底部的翻页条」）：
+ *
+ * 1. **只保留这一个滚动容器**。之前订单表自己也有内部滚动（`el-table` 的
+ *    `max-height`），于是滚轮在表格上时滚的是表格内部那几行，要等表格内部滚完
+ *    页面才接手 —— 用户以为「滚不动」。现在表格不设 `max-height`，
+ *    表格有多高就多高，页面滚轮可以一路滚到底。
+ * 2. **把滚动条画出来**。`html` / `body` 都是 `overflow: visible`（高度锁死在视口），
+ *    浏览器原生的页面滚动条永远不出现；而 `.el-main` 的滚动条在 Windows 上是
+ *    覆盖式（不悬停几乎看不见）。这里显式给宽度、轨道与滑块上色，
+ *    让「最右侧有一个可以拖的滚动条」成为看得见的事实。
+ */
 .el-main {
   box-sizing: border-box;
   padding: 10px 12px;
   overflow-x: hidden;
+  /* 竖向：需要时**始终显示**滚动条（不依赖 overlay 样式），保证看得见、拖得动 */
+  overflow-y: scroll;
   background-color: var(--el-bg-color-page);
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color-darker) var(--el-fill-color-light);
+
+  /* Chrome / Edge / Safari */
+  &::-webkit-scrollbar {
+    width: 14px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: var(--el-fill-color-light);
+    border-left: 1px solid var(--el-border-color-lighter);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--el-border-color-darker);
+    border: 3px solid var(--el-fill-color-light);
+    border-radius: 7px;
+
+    &:hover {
+      background-color: var(--el-text-color-secondary);
+    }
+  }
 }
+
 .el-footer {
   height: auto;
   padding: 0;
