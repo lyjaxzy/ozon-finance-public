@@ -1,33 +1,92 @@
 <template>
   <div class="dashboard">
-    <!-- 请求成功：正常看板（v-if 同时承担 null 收窄，ready 与 overview 等价，避免重复判断） -->
-    <template v-if="overview">
+    <!-- 请求成功：正常看板。判断条件是 `boardData`（单店或合计）而不是 overview ——
+         多店合计模式下 overview 一定是 null，用它会整页空白 -->
+    <template v-if="boardData">
       <header class="page-head card">
         <div class="head-main">
           <div class="head-title">
             <el-icon class="head-icon"><Shop /></el-icon>
-            <span class="shop-name">{{ storeDisplayName }}</span>
-            <el-tag class="alias-tag" size="small" effect="plain">别名 {{ alias }}</el-tag>
+            <span class="shop-name">{{ headTitle }}</span>
+            <el-tag v-if="isAggregate" class="alias-tag" size="small" type="warning" effect="plain">
+              {{ selectedAliases.length }} 个店铺合计
+            </el-tag>
+            <el-tag v-else class="alias-tag" size="small" effect="plain">别名 {{ currentAlias }}</el-tag>
           </div>
           <div class="head-meta">
             <span class="meta-item">
               <el-icon><Clock /></el-icon>
-              数据截止：{{ formatCutoff(overview.data_cutoff) }}
+              数据截止：{{ formatCutoff(boardData?.data_cutoff) }}
             </span>
             <el-divider direction="vertical" />
             <span class="meta-item">
               <el-icon><Calendar /></el-icon>
-              统计区间：{{ overview.period.start }} ~ {{ overview.period.end }}（{{ overview.period.days }} 天）
+              统计区间：{{ boardPeriod.start }} ~ {{ boardPeriod.end }}（{{ boardPeriod.days }} 天）
             </span>
+            <template v-if="isAggregate">
+              <el-divider direction="vertical" />
+              <span class="meta-item">
+                <el-icon><Grid /></el-icon>
+                共同窗口右端（各店最早结算日）：{{ boardPeriod.end }}
+              </span>
+            </template>
           </div>
         </div>
         <div class="head-actions">
-          <el-select v-model="days" class="days-select" @change="loadData">
+          <el-select
+            v-model="pickedAliases"
+            class="store-select"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="2"
+            placeholder="选择店铺（可多选做合计）"
+            @change="onStorePick"
+          >
+            <el-option
+              v-for="item in storeOptions"
+              :key="item.alias"
+              :label="item.display_name"
+              :value="item.alias"
+              :disabled="!item.available"
+            >
+              <span class="option-main">{{ item.display_name }}</span>
+              <span class="option-side">
+                <el-tag v-if="!item.available" size="small" type="danger" effect="plain">库不可用</el-tag>
+                <template v-else-if="item.window_end">结算至 {{ item.window_end }}</template>
+                <el-tag v-else size="small" type="info" effect="plain">无已结算</el-tag>
+              </span>
+            </el-option>
+          </el-select>
+          <el-select v-model="days" class="days-select" @change="onDaysChange">
             <el-option v-for="item in DASHBOARD_DAY_OPTIONS" :key="item" :label="`近 ${item} 天`" :value="item" />
           </el-select>
           <el-button type="primary" :icon="Refresh" @click="loadData">刷新</el-button>
         </div>
       </header>
+
+      <!-- 合计口径说明：多店合计时把「合计里少了什么」直接摆在最上面 -->
+      <el-alert
+        v-if="isAggregate"
+        class="mb16"
+        type="info"
+        :closable="false"
+        show-icon
+      >
+        <template #title>
+          多店合计：{{ selectedAliases.join("、") }}
+        </template>
+        <template #default>
+          <p class="aggregate-note">
+            合计的窗口右端取<strong>各店里最早的那个已结算日（{{ boardPeriod.end }}）</strong>
+            —— 若按各店自己的最新数据分头相加，落后的那家店会在尾部几天"贡献 0"，
+            看起来像那几天没生意。逐店明细见下方表格。
+          </p>
+          <ul v-if="aggregateWarnings.length" class="aggregate-warnings">
+            <li v-for="(text, index) in aggregateWarnings" :key="index">{{ text }}</li>
+          </ul>
+        </template>
+      </el-alert>
 
       <!-- 1. 顶部指标卡 -->
       <el-row :gutter="16" class="mb16">
@@ -37,7 +96,7 @@
             :class="{ 'metric-clickable': item.drilldown }"
             :role="item.drilldown ? 'button' : undefined"
             :tabindex="item.drilldown ? 0 : undefined"
-            :title="item.drilldown ? `点击查看${item.label}的逐 SKU 明细` : undefined"
+            :title="item.title"
             @click="openDrilldown(item)"
             @keyup.enter="openDrilldown(item)"
           >
@@ -64,7 +123,7 @@
         <el-col :xs="24" :lg="16">
           <div class="card chart-card">
             <div class="card-head">
-              <h3 class="card-title">实际利润 vs 预估利润（近 {{ overview.period.days }} 天）</h3>
+              <h3 class="card-title">实际利润 vs 预估利润（近 {{ boardPeriod.days }} 天）</h3>
               <span class="card-tip">单位：¥ · 逐单精算汇总，不补零日期</span>
             </div>
             <div class="chart-body">
@@ -87,16 +146,77 @@
         </el-col>
       </el-row>
 
-      <!-- 4. 订单明细表 -->
-      <div class="card">
+      <!-- 4. 逐店明细（仅多店合计时显示）：各店的合计必须在同一个窗口下 -->
+      <div v-if="isAggregate" class="card mb16">
+        <div class="card-head">
+          <h3 class="card-title">逐店明细（同一共同窗口）</h3>
+          <span class="card-tip">
+            各家之和 == 上方合计；「窗口右端」是各店自己的最后结算日，与合计窗口不一致时合计里不含它多出来的那几天
+          </span>
+        </div>
+        <el-table :data="aggregateStores" stripe class="order-table">
+          <el-table-column label="店铺" min-width="200" fixed>
+            <template #default="{ row }">
+              <div class="store-cell">
+                <span class="store-name">{{ row.display_name }}</span>
+                <el-tag size="small" effect="plain">{{ row.alias }}</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="窗口右端" min-width="120" align="center">
+            <template #default="{ row }">
+              <span :class="row.window_end === boardPeriod.end ? '' : 'lagging'">
+                {{ row.window_end ?? "--" }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="订单数" min-width="100" align="right">
+            <template #default="{ row }">{{ row.totals.total_order_count }}</template>
+          </el-table-column>
+          <el-table-column label="完整单" min-width="100" align="right">
+            <template #default="{ row }">{{ row.totals.complete_order_count }}</template>
+          </el-table-column>
+          <el-table-column label="实际利润 (¥)" min-width="140" align="right">
+            <template #default="{ row }">
+              <span :class="isNegative(row.totals.actual_profit_cny) ? 'profit-negative' : 'profit-positive'">
+                {{ formatMoney(row.totals.actual_profit_cny) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="预估利润 (¥)" min-width="140" align="right">
+            <template #default="{ row }">{{ formatMoney(row.totals.estimated_profit_cny) }}</template>
+          </el-table-column>
+          <el-table-column label="完成率" min-width="110" align="right">
+            <template #default="{ row }">{{ formatPercent(row.totals.completion_rate) }}</template>
+          </el-table-column>
+          <el-table-column label="逾期" min-width="90" align="right">
+            <template #default="{ row }">{{ row.totals.overdue_count ?? "--" }}</template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="120" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openSingleStore(row.alias)">单店看板</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 5. 订单明细表（多店合计时不下发订单明细：它是单店口径） -->
+      <div v-else class="card">
         <div class="card-head">
           <h3 class="card-title">订单明细</h3>
           <span class="card-tip">
-            本窗口共 {{ overview.totals.total_order_count }} 单，明细下发上限 {{ orders.length }} 条
-            （后端配置），合计口径以上方指标卡为准
+            本窗口共 {{ totals?.total_order_count ?? 0 }} 单，当前第 {{ page }} 页 / 共 {{ pageCount }} 页
+            （每页 {{ pageSize }} 条，服务端分页）· 合计口径以上方指标卡为准
           </span>
         </div>
-        <el-table :data="orders" stripe class="order-table" :header-cell-style="{ textAlign: 'right' }">
+        <el-table
+          v-loading="loading"
+          element-loading-text="正在取订单明细…"
+          :data="orders"
+          stripe
+          class="order-table"
+          :header-cell-style="{ textAlign: 'right' }"
+        >
           <el-table-column prop="posting_number" label="订单号" min-width="150" align="left" fixed />
           <el-table-column label="结算日期" min-width="120" align="right">
             <template #default="{ row }">{{ row.settlement_date ?? "--" }}</template>
@@ -131,7 +251,23 @@
               </el-tooltip>
             </template>
           </el-table-column>
+          <template #empty>
+            <el-empty description="这一页没有订单" :image-size="96" />
+          </template>
         </el-table>
+        <!-- 服务端分页：翻页会重新请求，合计始终是整个窗口的口径 -->
+        <div class="pager">
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :page-sizes="pageSizeOptions"
+            :total="totals?.total_order_count ?? 0"
+            background
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="loadData"
+            @size-change="onPageSizeChange"
+          />
+        </div>
       </div>
     </template>
 
@@ -150,54 +286,138 @@
         <el-button @click="goLogin">去登录</el-button>
       </div>
       <p class="error-tip">
-        接口：<code>GET /api/dashboard/store/{{ alias }}?days={{ days }}</code> → 127.0.0.1:8849（经 vite dev 代理）
+        接口：<code>GET /api/dashboard/{{ isAggregate ? "aggregate?stores=" + selectedAliases.join(",") : "store/" + currentAlias }}?days={{ days }}</code>
+        → 127.0.0.1:8849（经 vite dev 代理）
       </p>
     </div>
 
     <!-- 逐 SKU 利润下钻（点「实际利润合计」/「预估利润合计」指标卡打开） -->
+    <!-- 只在单店模式下可用：逐 SKU 归属依赖单店库的分组键，多店合计没有这个口径 -->
     <SkuDetailDrawer
       v-model="drilldownOpen"
       v-model:mode="drilldownMode"
-      :alias="alias"
+      :alias="currentAlias"
       :days="days"
+      :page-sizes="pageSizeOptions"
     />
   </div>
 </template>
 
 <script setup lang="ts" name="dashboard">
-import { ArrowRight, Calendar, Clock, DataAnalysis, Refresh, Shop, TrendCharts, Wallet, Warning } from "@element-plus/icons-vue";
+import {
+  ArrowRight,
+  Calendar,
+  Clock,
+  DataAnalysis,
+  Grid,
+  Refresh,
+  Shop,
+  TrendCharts,
+  Wallet,
+  Warning
+} from "@element-plus/icons-vue";
 import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
-import { computed, markRaw, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, markRaw, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { handleUnauthorized, type BackendError } from "@/api/backendRequest";
-import type { ResDashboard, ResOrderRow } from "@/api/interfaces/backend";
+import type { ResAggregate, ResDashboard, ResOrderRow } from "@/api/interfaces/backend";
 import { getStoreDashboardApi, ORDER_STATUS_MAP, type SkuProfitMode } from "@/api/modules/dashboard";
+import { getStoreAggregateApi } from "@/api/modules/stores";
 import ECharts from "@/components/ECharts/index.vue";
 import type { ECOption } from "@/components/ECharts/config";
 import { LOGIN_URL } from "@/config";
-import { DASHBOARD_DAY_OPTIONS, DEFAULT_STORE_ALIAS, STORE_DISPLAY_NAMES, type StoreAlias } from "@/config/store";
+import {
+  DASHBOARD_DAY_OPTIONS,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS
+} from "@/config/store";
+import { useStoreStore } from "@/stores/modules/store";
 
 import SkuDetailDrawer from "./components/SkuDetailDrawer.vue";
 
 /**
- * 店铺别名：集中配置在 `@/config/store.ts`，这里只消费。
- * 当前后端只注册了 store_alpha（真实数据）/ store_beta（库文件不存在），
- * 接多店时改配置文件即可，本页不需要动。
+ * 店铺选择来自 **URL query**（`?stores=a,b`），不在组件里另存一份状态。
+ *
+ * 为什么用 URL 而不是本地状态（ADR-0008）：
+ *  - 店铺管理页勾选完「查看所选合计」要跳过来，URL 是天然的交接点；
+ *  - 刷新、复制链接、浏览器前进后退都能复现同一屏，不会有"看着是这个店、其实查的是那个店"。
  */
-const alias = ref<StoreAlias>(DEFAULT_STORE_ALIAS);
-const storeDisplayName = computed(() => STORE_DISPLAY_NAMES[alias.value]);
+const route = useRoute();
+const router = useRouter();
+const storeStore = useStoreStore();
+
+const parseStores = (raw: unknown): string[] => {
+  const text = Array.isArray(raw) ? raw.join(",") : typeof raw === "string" ? raw : "";
+  return text
+    .split(",")
+    .map(item => item.trim())
+    .filter((item, index, all) => item && all.indexOf(item) === index);
+};
+
+/** URL 里点名的店铺；还没拿到后端列表时可能就是原始值 */
+const requestedAliases = ref<string[]>(parseStores(route.query.stores));
+/** 过滤掉无权/库不可用的别名之后的实际选择 */
+const selectedAliases = computed(() => {
+  const resolved = storeStore.resolveAliases(requestedAliases.value);
+  return resolved.length ? resolved : [];
+});
+const isAggregate = computed(() => selectedAliases.value.length > 1);
+const currentAlias = computed(() => selectedAliases.value[0] ?? "");
+const headTitle = computed(() =>
+  isAggregate.value ? "多店合计" : storeStore.displayName(currentAlias.value)
+);
+
+/** 下拉里可选的店铺：不可用的也列出来（禁用 + 说明原因），而不是悄悄藏掉 */
+const storeOptions = computed(() => storeStore.stores);
+
+/** 下拉的 v-model：直接读写 URL 里的那组别名 */
+const pickedAliases = computed<string[]>({
+  get: () => requestedAliases.value,
+  set: value => {
+    requestedAliases.value = value;
+  }
+});
+
+const onStorePick = () => {
+  const stores = selectedAliases.value;
+  router.replace({
+    query: { ...route.query, stores: stores.length ? stores.join(",") : undefined, page: undefined }
+  });
+  page.value = 1;
+  loadData();
+};
 
 /** 统计窗口（天）。后端只接受 days，不接受任意日期区间，见 dashboard.ts 注释 */
 const days = ref<number>(14);
 
-const router = useRouter();
 const loading = ref(false);
-/** 后端返回的看板数据（整体保存，页头也要用 period / data_cutoff） */
+/** 单店模式的响应 */
 const overview = ref<ResDashboard | null>(null);
+/** 多店合计的响应（与 overview 互斥） */
+const aggregate = ref<ResAggregate | null>(null);
 /** 请求失败的结构化错误；非空即渲染错误面板 */
 const loadError = ref<BackendError | null>(null);
+
+/** 订单明细的服务端分页状态 */
+const page = ref(1);
+const pageSize = ref(DEFAULT_PAGE_SIZE);
+const pageSizeOptions = computed(() =>
+  storeStore.pageSizeOptions.length ? storeStore.pageSizeOptions : [...PAGE_SIZE_OPTIONS]
+);
+const pageCount = computed(() => {
+  const total = totals.value?.total_order_count ?? 0;
+  return Math.max(1, Math.ceil(total / pageSize.value));
+});
+
+/** 当前展示的响应（单店或合计），两者的公共字段形状一致 */
+const boardData = computed<ResDashboard | ResAggregate | null>(() =>
+  isAggregate.value ? aggregate.value : overview.value
+);
+const boardPeriod = computed(() => boardData.value?.period ?? { start: "--", end: "--", days: days.value });
+const aggregateStores = computed(() => aggregate.value?.stores ?? []);
+const aggregateWarnings = computed(() => aggregate.value?.warnings ?? []);
 
 /** 数据已就绪（只有成功拿到响应才为 true，失败不会伪装成空数据） */
 const errorStatus = computed(() => loadError.value?.status);
@@ -216,7 +436,7 @@ const errorTitle = computed(() => {
 const errorDesc = computed(() => {
   const message = loadError.value?.message ?? "未知错误";
   if (errorStatus.value === 403) {
-    return `${message}。当前账号没有 ${alias.value} 的授权 —— 这不是「这段时间没有订单」，请换有权限的账号，或联系管理员开通。`;
+    return `${message}。当前账号没有 ${selectedAliases.value.join("、") || currentAlias.value} 的授权 —— 这不是「这段时间没有订单」，请换有权限的账号，或联系管理员开通。`;
   }
   if (errorStatus.value === 404) {
     return `${message}。可用别名由后端 OZON_STORES 白名单决定，前端不能凭空造别名。`;
@@ -224,10 +444,12 @@ const errorDesc = computed(() => {
   return message;
 });
 
-const trend = computed(() => overview.value?.trend ?? []);
-const composition = computed(() => overview.value?.composition ?? []);
+// 趋势/构成/合计：单店与合计两个响应里字段同名同形，这里统一取当前模式的那一份
+const trend = computed(() => boardData.value?.trend ?? []);
+const composition = computed(() => boardData.value?.composition ?? []);
+/** 订单明细只有单店模式有（合计不下发订单明细，它是单店口径） */
 const orders = computed<ResOrderRow[]>(() => overview.value?.orders ?? []);
-const totals = computed(() => overview.value?.totals ?? null);
+const totals = computed(() => boardData.value?.totals ?? null);
 
 /* ------------------------------ 数字格式化 ------------------------------ */
 // ⚠️ 金额一律是字符串（后端为避免 JS 浮点误差刻意下发字符串）。
@@ -271,12 +493,16 @@ const formatCutoff = (value: string | null | undefined) => (value ? dayjs(value)
 /* ------------------------------ 指标卡 ------------------------------ */
 /**
  * 指标卡的 `drilldown` 字段决定它能不能点开逐 SKU 明细。
- * 目前只给「实际利润合计」与「预估利润合计」两张卡开下钻 ——
- * 它们背后是同一份逐 SKU 数据（接口一次就把两个口径都返回了），
- * 所以多一张卡的成本只是切换默认排序与高亮口径。
+ *
+ * 为什么**只在单店模式下**可点：逐 SKU 归属靠的是单店库里的分组键
+ * （ADR-0006），多店合计没有这个口径 —— 跨库按货号聚合前还得先确认
+ * 「同一货号在不同店的采购成本是不是同一份」。所以合计模式下不给这个入口，
+ * 并在卡片下方直说原因，而不是让用户点进去看到一个单店的明细。
  */
 const metricCards = computed(() => {
   const data = totals.value;
+  const aggregateMode = isAggregate.value;
+  const footSuffix = aggregateMode ? "（多店合计：逐 SKU 下钻请切到单店）" : "";
   return [
     {
       key: "actual_profit_cny",
@@ -286,8 +512,9 @@ const metricCards = computed(() => {
       unit: "CNY",
       color: "var(--el-color-primary)",
       icon: markRaw(Wallet),
-      drilldown: "actual" as SkuProfitMode,
-      foot: `完整核算 ${data?.complete_order_count ?? 0} / 共 ${data?.total_order_count ?? 0} 单（全窗口口径，非明细行数）`
+      drilldown: aggregateMode ? null : ("actual" as SkuProfitMode),
+      title: aggregateMode ? "多店合计不支持逐 SKU 下钻（下钻是单店口径）" : "点击查看实际利润的逐 SKU 明细",
+      foot: `完整核算 ${data?.complete_order_count ?? 0} / 共 ${data?.total_order_count ?? 0} 单（全窗口口径，非明细行数）${footSuffix}`
     },
     {
       key: "estimated_profit_cny",
@@ -296,7 +523,8 @@ const metricCards = computed(() => {
       unit: "CNY",
       color: "var(--el-color-success)",
       icon: markRaw(TrendCharts),
-      drilldown: "estimated" as SkuProfitMode,
+      drilldown: aggregateMode ? null : ("estimated" as SkuProfitMode),
+      title: aggregateMode ? "多店合计不支持逐 SKU 下钻（下钻是单店口径）" : "点击查看预估利润的逐 SKU 明细",
       foot: "收入 − 采购成本 − 物流费 − 预估平台佣金（后端现算）"
     },
     {
@@ -307,17 +535,19 @@ const metricCards = computed(() => {
       color: "var(--el-color-warning)",
       icon: markRaw(DataAnalysis),
       drilldown: null,
-      foot: "actual_complete=1 的订单数 / 总订单数"
+      title: aggregateMode ? "Σ完整单 / Σ总单（不是各店完成率的平均）" : "完整核算订单数 / 总订单数",
+      foot: aggregateMode ? "Σ完整单数 / Σ总单数 —— 不是各店完成率的平均" : "actual_complete=1 的订单数 / 总订单数"
     },
     {
       key: "overdue_count",
       label: "待发货逾期单数",
-      value: data ? String(data.overdue_count) : "--",
+      value: data && data.overdue_count !== null ? String(data.overdue_count) : "--",
       unit: "单",
       color: "var(--el-color-danger)",
       icon: markRaw(Warning),
       drilldown: null,
-      foot: "截至数据截止时刻的当前逾期数，与统计区间无关"
+      title: "当前逾期单数，与统计区间无关；任一店给不出时整体为空",
+      foot: aggregateMode ? "各店相加；任一店给不出则为空（不当成 0）" : "截至数据截止时刻的当前逾期数，与统计区间无关"
     }
   ];
 });
@@ -449,10 +679,35 @@ const loadData = async () => {
   try {
     // 图表色板需要从当前主题变量解析，放在数据渲染前执行
     resolvePalette();
-    overview.value = await getStoreDashboardApi(alias.value, days.value);
+    // 店铺列表只取一次（页面之间共享），它决定「别名 → 展示名」与可选项
+    await storeStore.load();
+    await ensureAliases();
+
+    if (!selectedAliases.value.length) {
+      // 一个可看的店都没有：这不是「空数据」，是没得看 —— 走错误面板而不是空白页
+      throw {
+        message: storeStore.error?.message ?? "当前账号没有任何可查看的店铺（或所有店铺库都不可用）",
+        status: storeStore.error?.status,
+        isNetworkError: storeStore.error?.isNetworkError ?? false
+      } as BackendError;
+    }
+
+    if (isAggregate.value) {
+      // 多店合计：**由后端算**。前端不做跨店累加（会变成第二套口径）
+      aggregate.value = await getStoreAggregateApi(selectedAliases.value, days.value);
+      overview.value = null;
+    } else {
+      // 单店：订单明细走服务端分页，合计仍是整个窗口的口径
+      overview.value = await getStoreDashboardApi(currentAlias.value, days.value, {
+        offset: (page.value - 1) * pageSize.value,
+        limit: pageSize.value
+      });
+      aggregate.value = null;
+    }
   } catch (error) {
     const e = error as BackendError;
     overview.value = null;
+    aggregate.value = null;
     loadError.value = e;
     // 401：令牌失效 —— 清掉本地令牌并跳回登录页，不显示空数据
     if (e?.status === 401) {
@@ -467,9 +722,77 @@ const loadData = async () => {
   }
 };
 
+/**
+ * 把 URL 里的店铺与后端下发的可见店铺对齐。
+ *
+ * 两件事：
+ *  1. 没有任何选择时选第一个可用的店（不写死别名）；
+ *  2. URL 里有无权/不可用的别名时**把它从 URL 里去掉**，并提示一次 ——
+ *     否则页面会一直吃 403，而用户不知道自己为什么进不去。
+ */
+const ensureAliases = async () => {
+  const wanted = requestedAliases.value;
+  const resolved = storeStore.resolveAliases(wanted);
+  if (wanted.length && resolved.length !== wanted.length) {
+    const dropped = wanted.filter(a => !resolved.includes(a));
+    ElMessage.warning(`已忽略不可用的店铺：${dropped.join("、")}`);
+  }
+  const next = resolved.length ? resolved : storeStore.defaultAliases();
+  requestedAliases.value = next;
+  if (next.join(",") !== wanted.join(",")) {
+    await router.replace({ query: { ...route.query, stores: next.join(",") } });
+  }
+};
+
+const onDaysChange = () => {
+  page.value = 1;
+  loadData();
+};
+
+const onPageSizeChange = () => {
+  page.value = 1;
+  loadData();
+};
+
+/** 从逐店明细跳该店的单店看板（合计模式下的出口） */
+const openSingleStore = (alias: string) => {
+  page.value = 1;
+  router.replace({ query: { ...route.query, stores: alias, page: undefined } });
+  requestedAliases.value = [alias];
+  loadData();
+};
+
+/**
+ * 从店铺管理页的「逐 SKU 明细」跳过来：`?stores=x&drilldown=estimated`。
+ * 只在单店模式下自动打开抽屉 —— 合计模式没有逐 SKU 口径（ADR-0008 §六），
+ * 那种情况下忽略这个参数，而不是打开一个单店的明细冒充合计。
+ */
+const maybeOpenDrilldown = () => {
+  const wanted = route.query.drilldown;
+  if (wanted !== "estimated" && wanted !== "actual") return;
+  if (isAggregate.value || !currentAlias.value) return;
+  drilldownMode.value = wanted;
+  drilldownOpen.value = true;
+};
+
 const goLogin = () => router.replace(LOGIN_URL);
 
-onMounted(() => loadData());
+/** URL 变化（浏览器前进后退、店铺管理页跳过来）→ 重新取数 */
+watch(
+  () => route.query.stores,
+  value => {
+    const next = parseStores(value);
+    if (next.join(",") === requestedAliases.value.join(",")) return;
+    requestedAliases.value = next;
+    page.value = 1;
+    loadData();
+  }
+);
+
+onMounted(async () => {
+  await loadData();
+  maybeOpenDrilldown();
+});
 </script>
 
 <style scoped lang="scss">
@@ -536,9 +859,59 @@ onMounted(() => loadData());
     align-items: center;
   }
 
+  .store-select {
+    width: 320px;
+  }
+
   .days-select {
     width: 120px;
   }
+}
+
+/* 店铺下拉：一行里左边店名、右边结算日/不可用标记 */
+.option-main {
+  float: left;
+}
+
+.option-side {
+  float: right;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+/* 多店合计的说明块 */
+.aggregate-note {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.aggregate-warnings {
+  padding-left: 18px;
+  margin: 8px 0 0;
+
+  li {
+    line-height: 1.7;
+  }
+}
+
+/* 逐店明细里的店名格 */
+.store-cell {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 拖后腿的那家店：窗口右端与共同窗口不一致，标红提醒 */
+.lagging {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+/* 分页条：贴右对齐，与表格留一点间距 */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 /* 首次加载：骨架屏 */

@@ -1,6 +1,6 @@
 // ? 全局默认配置项
 
-// 首页地址（默认）：单店财务看板
+// 首页地址（默认）：财务看板（可选单店或多店合计，由 `?stores=a,b` 决定）
 export const HOME_URL: string = "/dashboard";
 
 // 登录页地址（默认）

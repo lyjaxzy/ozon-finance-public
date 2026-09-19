@@ -1,31 +1,53 @@
 import backend from "@/api/backendRequest";
 import type { ResDashboard, ResSkuDetail } from "@/api/interfaces/backend";
-import { DEFAULT_STORE_ALIAS, type StoreAlias } from "@/config/store";
+import { FALLBACK_STORE_ALIAS } from "@/config/store";
 
 /**
  * @description 单店财务看板的真实数据源
  *
  * 真实接口（api/README.md 第 3 节）：
- *   GET /api/dashboard/store/{alias}?days=14
+ *   GET /api/dashboard/store/{alias}?days=14&orders_offset=0&orders_limit=100
  *
  * 关键约定：
  *  - **所有金额/汇率都是字符串**，前端只做格式化，绝不用浮点做加减；
  *  - `totals.completion_rate` 是字符串小数（如 "1.0000"），展示时转百分比；
- *  - `orders` 有上限（后端 OZON_MAX_ORDERS，当前 200 条），
- *    全量口径在 `totals` / `trend` / `composition` 里，页面必须写明这一点，
- *    否则「明细加起来 ≠ 合计」会被当成 bug；
- *  - 窗口是 `days` 而不是任意日期区间：后端窗口右端取 `data_cutoff` 的日期
+ *  - **订单明细分页是服务端分页**（ADR-0008）：`orders_offset` / `orders_limit`
+ *    决定 `orders` 数组下发哪一段，响应形状一个字段都没变；
+ *    `totals` / `trend` / `composition` **永远覆盖整个窗口**，不受分页影响，
+ *    所以「这一页的和 ≠ 合计」是正常的，页面上必须写明这一点；
+ *  - 窗口是 `days` 而不是任意日期区间：后端窗口右端取最后一个已结算日
  *    （不是系统当天），所以前端不该自己算日期区间，只能传天数。
  */
 
-/** 请求某店铺某窗口的看板 */
-export const getStoreDashboardApi = async (alias: string, days: number): Promise<ResDashboard> => {
+/** 订单明细的服务端分页参数 */
+export interface OrderPageQuery {
+  offset?: number;
+  limit?: number;
+}
+
+/** 请求某店铺某窗口的看板（可分页取订单明细） */
+export const getStoreDashboardApi = async (
+  alias: string,
+  days: number,
+  page: OrderPageQuery = {}
+): Promise<ResDashboard> => {
   const safeDays = Math.min(Math.max(Math.trunc(days) || 1, 1), 365);
-  return backend.get<unknown, ResDashboard>(`/dashboard/store/${alias}`, { params: { days: safeDays } });
+  const params: Record<string, string | number> = { days: safeDays };
+  if (page.offset) params.orders_offset = Math.max(0, Math.trunc(page.offset));
+  if (page.limit !== undefined) {
+    // 后端上限同样是 200；这里夹一下，避免把 422 当成「加载失败」展示给用户
+    params.orders_limit = Math.min(Math.max(Math.trunc(page.limit) || 1, 1), 200);
+  }
+  return backend.get<unknown, ResDashboard>(`/dashboard/store/${alias}`, { params });
 };
 
-/** 默认店铺（集中配置在 @/config/store，接多店时只改那一处） */
-export const DEFAULT_ALIAS: StoreAlias = DEFAULT_STORE_ALIAS;
+/**
+ * 默认店铺别名。
+ *
+ * ⚠️ 2026-09-19 起别名不再由前端决定（ADR-0008）：可见店铺由 `GET /api/stores`
+ * 下发。这个常量只是「列表还没拿到时」的兜底，页面拿到列表后会以后端为准。
+ */
+export const DEFAULT_ALIAS = FALLBACK_STORE_ALIAS;
 
 /** 订单核算状态枚举（真实字段是布尔 `complete`，不是旧 mock 的字符串 status） */
 export const ORDER_STATUS_MAP: Record<"complete" | "incomplete", { label: string; tagType: "success" | "warning" }> = {

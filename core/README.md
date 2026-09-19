@@ -208,6 +208,13 @@ python core/tools/verify_excel_vs_sqlite.py --census
 * `FixtureSource` 的 `overdue_count` **抛 `NotImplementedError`**：
   夹具没冻结 `overdue_fast_*` 扫描数据，而逾期是「当前态」不是历史事实。
   返回 0 会变成伪装成成功的错误，所以宁可抛错。
+* **多店合计不在这里**（ADR-0008）：把几个店的数字合并是「跨店铺的区间对齐」
+  问题，不是新的利润公式，所以它放在 `api/dashboard.py::build_multi_store_summary`，
+  逐店仍然调用同一个 `build_dashboard`（不重写口径）。
+  唯一从 core 借的东西是完成率的**唯一定义**
+  `completion_rate_from_counts(done, total)` —— `completion_rate()` 也调用它，
+  全项目只有那一处除法。多店合计不能把各店完成率取平均：
+  实测两家店单量 1978 : 45，按店等权会明显失真，必须 `Σ完整单 / Σ总单`。
 
 新增的 `core/domain/profit.sum_amounts(values)` 是唯一的求和定义
 （跳过 `None`，**不当作 0**），仓储层与 API 层都经它汇总，

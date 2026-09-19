@@ -7,11 +7,25 @@
       "component": "/dashboard/index",
       "meta": {
         "icon": "DataAnalysis",
-        "title": "单店财务看板",
+        "title": "财务看板",
         "isLink": "",
         "isHide": false,
         "isFull": false,
         "isAffix": true,
+        "isKeepAlive": true
+      }
+    },
+    {
+      "path": "/store",
+      "name": "storeManage",
+      "component": "/store/index",
+      "meta": {
+        "icon": "Shop",
+        "title": "店铺管理",
+        "isLink": "",
+        "isHide": false,
+        "isFull": false,
+        "isAffix": false,
         "isKeepAlive": true
       }
     }

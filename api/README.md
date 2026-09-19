@@ -66,12 +66,107 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
 |---|---|---|---|
 | POST | `/api/auth/login` | `{username, password}` → `{access_token, token_type, expires_in, user}` | 否 |
 | GET | `/api/auth/me` | → `{user, stores[]}`，`stores` 只含**该用户可见**的店铺 | 是 |
-| GET | `/api/dashboard/store/{alias}?days=14` | 单店看板 | 是 |
-| GET | `/api/dashboard/store/{alias}/sku-detail?days=14` | **逐 SKU 利润下钻**（ADR-0006） | 是 |
+| GET | `/api/stores` | **可见店铺列表** + 库可用性 + 最近结算日（ADR-0008） | 是 |
+| GET | `/api/dashboard/store/{alias}?days=14` | 单店看板（`orders_offset` / `orders_limit` 做服务端分页） | 是 |
+| GET | `/api/dashboard/aggregate?stores=a,b&days=14` | **多店合计**（ADR-0008） | 是 |
+| GET | `/api/dashboard/store/{alias}/sku-detail?days=14` | **逐 SKU 利润下钻**（ADR-0006，`limit` / `offset` 分页） | 是 |
 | GET | `/api/health` | → `{status, data_source_readonly, store_aliases, orders_in_response_limit}` | 否 |
 | GET | `/api/health/store/{alias}` | 店铺库连通性自检（只回布尔量，不含业务数据） | 否 |
 
 `days` 取值 1–365，默认 14，越界返回 422。
+
+分页参数（都是**可选**的，不传就是原来的行为）：
+
+| 接口 | 参数 | 默认 / 上限 | 影响什么 |
+|---|---|---|---|
+| 单店看板 | `orders_limit` | 默认 200，上限 200（越界 422） | 只决定 `orders` 数组下发哪一段 |
+| 单店看板 | `orders_offset` | 默认 0 | 同上 |
+| 逐 SKU 明细 | `limit` / `offset` | 默认 500 / 0，上限 500 | 只决定 `rows` 下发哪一段 |
+
+**分页永远不影响合计**：`totals` / `trend` / `composition`（以及逐 SKU 的
+`totals` / `reconciliation`）都按**整个窗口**算。所以「这一页的明细加起来 ≠ 合计」
+是正常的，界面上必须写明这一点。
+
+### 多店合计接口（ADR-0008）
+
+```
+GET /api/dashboard/aggregate?stores=store_alpha,store_beta&days=14
+```
+
+```json
+{
+  "store_aliases": ["store_alpha", "store_beta"],
+  "stores": [
+    {
+      "alias": "store_alpha",
+      "display_name": "OZON 俄罗斯站 · 主力店",
+      "data_cutoff": "2026-09-11T00:46:47.314183+08:00",
+      "window_end": "2026-09-10",
+      "period": {"start": "2026-08-28", "end": "2026-09-10", "days": 14},
+      "totals": { "...": "与单店接口同形" }
+    },
+    { "alias": "store_beta", "...": "..." }
+  ],
+  "data_cutoff": "2026-09-11T00:47:33.012103+08:00",
+  "window_end": "2026-09-10",
+  "period": {"start": "2026-08-28", "end": "2026-09-10", "days": 14},
+  "totals": {
+    "actual_profit_cny": "49437.26",
+    "estimated_profit_cny": "47494.96",
+    "completion_rate": "1.0000",
+    "complete_order_count": 2023,
+    "total_order_count": 2023,
+    "overdue_count": 20
+  },
+  "trend": [ "..." ],
+  "composition": [ "..." ],
+  "warnings": []
+}
+```
+
+四条必须知道的规则：
+
+1. **共同窗口**：`window_end` = 各店 `window_end` 里**最早**的那个，逐店的
+   `period` 与顶层 `period` 是**同一个区间**。理由见 ADR-0008 §二：
+   按各店自己的最新数据分头相加，落后的那家店会在尾部几天「贡献 0」，
+   看起来像那几天没生意（那正是 ADR-0007 那个事故的形状）。
+2. **逐店之和 == 顶层合计**（逐字段）。逐店 `totals` 就是在共同窗口下算的，
+   所以这条等式可以当场核对；`api/tests/test_multi_store.py` 把它写成了断言。
+3. **完成率是 `Σ完整单 / Σ总单`**，不是各店完成率的平均。定义只有一处：
+   `core/domain/profit.py::completion_rate_from_counts`。
+   实测两家店单量差 40 倍（1978 : 45），按店等权会明显失真。
+4. **任一店给不出某项就给 `null`**，并在 `warnings` 里点名是哪家店。
+   `overdue_count` 是最常见的一个（某店的数据源不支持逾期扫描）。
+
+权限：任一店不通过就**整体** 403/404，不返回「少了一家店」的合计
+（PRD §9.2 要禁掉的正是这种「伪装成成功的错误」）。`stores` 上限 10 个店，越界 422。
+
+### 店铺列表接口
+
+```
+GET /api/stores
+```
+
+```json
+{
+  "stores": [
+    {"alias": "store_alpha", "display_name": "OZON 俄罗斯站 · 主力店",
+     "available": true, "error": null,
+     "data_cutoff": "2026-09-11T00:46:47.314183+08:00", "window_end": "2026-09-10"}
+  ],
+  "total": 1,
+  "page_size_options": [10, 20, 50, 100],
+  "max_aggregate_stores": 10,
+  "config_hint": "新增/下线店铺要改服务端 OZON_STORES 环境变量后重启…"
+}
+```
+
+* `stores` 只含**该用户可见**的店铺（root 全部，其余按 `users.json` 的授权过滤）。
+* `available` 是**真的打开一次库**得到的结果；打不开时 `error` 里写明原因，
+  不是静默跳过 —— placeholder 店铺在界面上会显示成「库不可用」并给出原因。
+* **库路径不下发**：它是服务端配置，前端只需要别名。
+* 这个接口**没有写操作**：新增/下线店铺改 `OZON_STORES` 后重启。
+  本项目的性质是「`api/` 下没有任何写路由」，不为一个管理界面破掉它。
 
 ### 看板响应形状
 
@@ -347,11 +442,18 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
    换实现时只需替换 `UserStore.from_file`。
 2. **单机内存 JWT**，没有刷新令牌、没有吊销名单（登出只能等过期）。
    令牌里只放身份不放授权，所以改授权立即生效。
-3. **店铺元信息写死在配置里**（`config.STORE_DISPLAY_NAMES`），还没有店铺表。
-4. **`orders` 数组上限 200 条**（`OZON_MAX_ORDERS` 可调）。
-   响应形状是前端定死的，**不能**偷偷加分页字段，所以超出部分只体现在
-   `totals` / `trend` 里。当前窗口实际 1978 单 → 明细返回 200 条。
-   `orders_for_period` 已经支持 `limit` / `offset`，加正式分页时不用改仓储层。
+3. **店铺元信息写死在配置里**（`config.STORE_DISPLAY_NAMES` + `OZON_STORES`），
+   还没有店铺表。`GET /api/stores` 把这些配置**读出来**下发（含可用性探测），
+   但新增/下线店铺仍然要改配置后重启 —— 没有写路由，也没打算加。
+4. **订单明细分页是服务端分页，但服务端仍按整窗口取数**（ADR-0008 §四）。
+   分页参数（`orders_offset` / `orders_limit`）只裁剪 `orders` 数组，
+   合计/趋势/构成的取数范围不变 —— 它们必须覆盖整个窗口，这是锁定口径。
+   所以分页省下的是**响应体积与浏览器 DOM**（200 行 → ≤100 行），
+   **不是后端的取数开销**。
+   后端优化的诱惑是「合计走廉价聚合路径，只对当前页跑领域层」，**刻意不做**：
+   廉价路径的预估利润取库里存下来的派生值、逐单路径是现算，两者在已知脏值
+   （D3，1 单）上不同 —— 一旦按分页状态切换数据路径，同一张指标卡会在翻页时
+   显示不同数字，这是最难查的一类 bug。
 
 ### 8.2 没能实现 / 需要业务确认
 
@@ -388,6 +490,10 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 7. ~~**`store_beta` 的库文件不存在**~~ —— **此条已作废，见文末「更正记录」**。
    该库真实存在，root 访问它返回真实数据（45 单）；
    「注册了但库没到位」应返回 503 而不是 404（配置故障要让运维看见）。
+8. **多店合计不做店间抵消，也不做多店 SKU 明细**（ADR-0008 §六）：
+   我们没有内部交易，没有可抵消项；逐 SKU 归属依赖单店库的分组键，
+   跨库按货号聚合前得先确认「同一货号在不同店的采购成本是不是同一份」（业务确认）。
+   因此**合计模式下前端禁用逐 SKU 下钻**，界面上直说原因。
 
 ### 8.3 数据来源对照
 
