@@ -14,14 +14,17 @@ amounts_for_period / daily_amounts）只做取数与求和，判定「哪些订�
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
+from decimal import Decimal
 from typing import Optional, Sequence
 
 from ..domain.profit import (Operation, Posting, SettlementSnapshot,
                              quantize_cny, rate_is_valid, sum_amounts,
                              to_decimal)
 from .base import (DailyAmounts, DataCutoff, OverdueInfo, PeriodAmounts,
-                   PeriodOrderRow)
+                   PeriodOrderRow, PeriodSkuRow, SkuDetail,
+                   UnattributedAmounts, UnattributedRecord)
+from .sku_attribution import attribute_order_lines
 
 DEFAULT_STORE = r'<DATA_ROOT>\data\stores\store_alpha.db'
 
@@ -100,6 +103,52 @@ def _parse_dt(value) -> Optional[datetime]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=CN_TZ)
     return dt
+
+
+def _parse_day(value) -> Optional[date]:
+    """把库里的 `YYYY-MM-DD` 日期串解析成 date；解析不了就返回 None。
+
+    只认日期的前 10 位：`settlement_date` 是 DATE 列（库里存 `2026-09-10`），
+    但历史数据里也可能混进带时间的串，取前 10 位比直接 `fromisoformat` 稳。
+    """
+    if not value:
+        return None
+    s = str(value).strip()
+    if len(s) < 10:
+        return None
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        return None
+
+
+# ── data_cutoff 的候选时间戳（分两类，见 SqliteSource.data_cutoff）──
+#
+# 财务表：它们的新鲜度 = 数据的新鲜度。
+_FINANCE_TIMESTAMP_SQL = {
+    'settlement_snapshots.updated_at':
+        'SELECT max(updated_at) FROM settlement_snapshots',
+    'posting_profit_facts.updated_at':
+        'SELECT max(updated_at) FROM posting_profit_facts',
+    'finance_transactions.updated_at':
+        'SELECT max(updated_at) FROM finance_transactions',
+}
+
+# 运营表：只记录，不参与判断。
+# 之前这里写的是 `sync_runs.finished_at` —— 该列**不存在**（实际列名是
+# recorded_at），`_scalar` 吞掉 OperationalError 返回 None，于是这个候选
+# 一直静默失效。改成真实列名，并且只当诊断信息。
+_OBSERVED_TIMESTAMP_SQL = {
+    'overdue_fast_scans.updated_at':
+        'SELECT max(updated_at) FROM overdue_fast_scans',
+    'sync_runs.recorded_at':
+        'SELECT max(recorded_at) FROM sync_runs',
+}
+
+# 窗口右端 = 最后一个**已结算**的日期。只有 state='locked' 的快照算已结算，
+# 与 orders_for_period 的过滤条件逐字一致 —— 两处口径必须同步改。
+_WINDOW_END_SQL = ("SELECT max(settlement_date) FROM settlement_snapshots "
+                   "WHERE state = 'locked'")
 
 
 class SqliteSource:
@@ -318,22 +367,40 @@ class SqliteSource:
                 for r in rows}
 
     def data_cutoff(self, store_alias: str) -> DataCutoff:
-        cands = {
-            'settlement_snapshots.updated_at':
-                self._scalar('SELECT max(updated_at) FROM settlement_snapshots'),
-            'posting_profit_facts.updated_at':
-                self._scalar('SELECT max(updated_at) FROM posting_profit_facts'),
-            'overdue_fast_scans.updated_at':
-                self._scalar('SELECT max(updated_at) FROM overdue_fast_scans'),
-            'sync_runs.finished_at':
-                self._scalar('SELECT max(finished_at) FROM sync_runs'),
-        }
-        parsed = {k: _parse_dt(v) for k, v in cands.items()}
-        usable = {k: v for k, v in parsed.items() if v is not None}
-        if not usable:
-            return DataCutoff(None, 'none', cands)
-        source = max(usable, key=lambda k: usable[k])
-        return DataCutoff(usable[source], source, cands)
+        """库的时间边界：财务表的写入时间 + 最后一个已结算日。
+
+        候选时间戳**分两组**，这是本方法唯一需要小心的地方：
+
+        * `_FINANCE_TIMESTAMP_SQL` —— 财务表。它们的新鲜度就是数据的新鲜度，
+          可以决定「数据截止」。
+        * `_OBSERVED_TIMESTAMP_SQL` —— 运营表。只记录进 `candidates` 供排查，
+          **不参与**任何判断。`overdue_fast_scans.updated_at` 曾经参与过，
+          于是 2026-09-19 的一次逾期扫描把窗口右端从 09-10 推到 09-19，
+          `days=7` 的窗口里一天财务数据都没有 —— 详见 `DataCutoff` 的注释。
+
+        `window_end` 另走一条路：**锁定快照里最大的 settlement_date**。
+        这是数据自己给出的边界，比任何写入时间都可靠 —— 写入时间会被
+        重跑同步整体刷新到今天，而窗口查询的过滤条件恰恰是
+        `s.settlement_date BETWEEN ? AND ?`，右端越过最后一个结算日就必然是空窗。
+        """
+        raw = {name: self._scalar(sql)
+               for name, sql in {**_FINANCE_TIMESTAMP_SQL,
+                                 **_OBSERVED_TIMESTAMP_SQL}.items()}
+        parsed = {k: _parse_dt(v) for k, v in raw.items()}
+        window_end = _parse_day(self._scalar(_WINDOW_END_SQL))
+        finance = {k: v for k, v in parsed.items()
+                   if k in _FINANCE_TIMESTAMP_SQL and v is not None}
+        if finance:
+            source = max(finance, key=lambda k: finance[k])
+            return DataCutoff(finance[source], source, raw, window_end)
+        # 一张财务表都读不到（库结构对不上 / 是空库）：退回运营表只是为了
+        # 「别显示一个空截止时间」，但 source 带 `observed:` 前缀，
+        # 不把运营时间伪装成财务时间。
+        observed = {k: v for k, v in parsed.items() if v is not None}
+        if observed:
+            source = max(observed, key=lambda k: observed[k])
+            return DataCutoff(observed[source], 'observed:' + source, raw, window_end)
+        return DataCutoff(None, 'none', raw, window_end)
 
     def orders_for_period(self, store_alias: str, start_date: str, end_date: str,
                           limit: Optional[int] = None, offset: int = 0) -> Sequence[PeriodOrderRow]:
@@ -367,27 +434,235 @@ class SqliteSource:
         operations = self._operations_for_postings(list(by_pn), start_date, end_date)
         out = []
         for pn, r in by_pn.items():
-            out.append(PeriodOrderRow(
+            out.append(self._period_order_row(pn, r, operations.get(pn, ())))
+        return tuple(out)
+
+    def _period_order_row(self, pn: str, r, operations) -> PeriodOrderRow:
+        """把一行窗口查询结果组装成 `PeriodOrderRow`（逐单口径的原始输入）。
+
+        抽出来是为了让「订单口径」的两条路径（看板与逐 SKU 下钻的对账）
+        共用同一段组装代码 —— 两处各写一遍迟早会漂移。
+        """
+        return PeriodOrderRow(
+            posting_number=pn,
+            settlement_date=r['settlement_date'],
+            snapshot=SettlementSnapshot(
                 posting_number=pn,
                 settlement_date=r['settlement_date'],
-                snapshot=SettlementSnapshot(
-                    posting_number=pn,
-                    settlement_date=r['settlement_date'],
-                    state='locked',
-                    direct_net_rub=to_decimal(r['direct_net_rub']),
-                    settled_sales_rub=to_decimal(r['settled_sales_rub']),
-                    exchange_rate_rub_per_cny=to_decimal(r['exchange_rate_rub_per_cny']),
-                    purchase_cost_cny=to_decimal(r['purchase_cost_cny']),
-                    operation_ids=self._json_ids(r['operation_ids_json']),
-                    unknown_reason=r['unknown_reason'],
-                ),
-                posting=self._posting_from_row(pn, r),
-                expected_operation_ids=self._json_ids(r['linked_operation_ids_json']),
+                state='locked',
+                direct_net_rub=to_decimal(r['direct_net_rub']),
+                settled_sales_rub=to_decimal(r['settled_sales_rub']),
+                exchange_rate_rub_per_cny=to_decimal(r['exchange_rate_rub_per_cny']),
+                purchase_cost_cny=to_decimal(r['purchase_cost_cny']),
+                operation_ids=self._json_ids(r['operation_ids_json']),
+                unknown_reason=r['unknown_reason'],
+            ),
+            posting=self._posting_from_row(pn, r),
+            expected_operation_ids=self._json_ids(r['linked_operation_ids_json']),
+            operations=tuple(operations),
+            reference_actual_profit_cny=to_decimal(r['actual_profit_cny']),
+            reference_estimated_profit_cny=to_decimal(r['estimated_profit_cny']),
+        )
+
+    # ── 逐 SKU 下钻（ADR-0006）────────────────────────────────────
+    #
+    # ⚠️ 本方法**没有任何利润口径**：它只做「按数据自带的分组键取数与归属」。
+    # 收入/成本落不到某个货号时，一律进未归属桶并写明原因，绝不分摊、绝不补 0。
+    def sku_detail_for_period(self, store_alias: str, start_date: str,
+                              end_date: str) -> SkuDetail:
+        """窗口内逐 SKU（按货号）的取数与归属结果。
+
+        窗口口径与 `orders_for_period` 逐字相同（锁定快照的 settlement_date），
+        否则「逐 SKU 合计」与「订单口径合计」会对不上。
+        """
+        posting_rows = self._conn.execute("""
+            SELECT s.posting_number, s.settlement_date, s.direct_net_rub,
+                   s.settled_sales_rub, s.exchange_rate_rub_per_cny,
+                   s.purchase_cost_cny, s.unknown_reason, s.operation_ids_json,
+                   f.actual_profit_cny, f.linked_operation_ids_json,
+                   p.status, p.revenue_cny,
+                   p.purchase_cost_cny AS posting_purchase_cost_cny,
+                   p.logistics_cost_cny, p.estimated_platform_fee_cny,
+                   p.estimated_profit_cny, p.raw_json
+              FROM settlement_snapshots s
+              JOIN posting_profit_facts f ON f.posting_number = s.posting_number
+              LEFT JOIN postings p ON p.posting_number = s.posting_number
+             WHERE s.state = 'locked' AND s.settlement_date BETWEEN ? AND ?
+             ORDER BY s.settlement_date DESC, s.posting_number DESC
+        """, (start_date, end_date)).fetchall()
+        if not posting_rows:
+            return SkuDetail()
+
+        pns = [r['posting_number'] for r in posting_rows]
+        operations = self._operations_for_postings(pns, start_date, end_date)
+        items_by_pn = self._items_for_postings(pns)
+        unit_costs = self._unit_costs()
+
+        rows: list = []
+        unattributed: list = []
+        actual_unattributed: list = []
+        for r in posting_rows:
+            pn = r['posting_number']
+            items = items_by_pn.get(pn, ())
+            prices = self._unit_prices(r['raw_json'])
+            # 按行收入用**权威的明细行数量**乘单价（而不是 raw_json 里自带的
+            # quantity）：数量只有一个来源，两个来源对不上时让收入归属失败，
+            # 而不是各用一半、悄悄凑出一个和。
+            line_revenues = {
+                str(offer): prices[str(offer)] * Decimal(int(qty or 0))
+                for (offer, _sku, _name, qty) in items
+                if str(offer) in prices
+            }
+            posting = self._posting_from_row(pn, r)
+            order_row = self._period_order_row(pn, r, operations.get(pn, ()))
+            line_rows, records = attribute_order_lines(
+                posting_number=pn,
+                settlement_date=r['settlement_date'],
+                items=items,
+                revenue_cny=None if posting is None else posting.revenue_cny,
+                purchase_cost_cny=None if posting is None else posting.purchase_cost_cny,
+                unit_cost_by_offer=unit_costs,
+                line_revenues=line_revenues,
+                logistics_cost_cny=None if posting is None else posting.logistics_cost_cny,
+                platform_fee_cny=(
+                    None if posting is None else posting.estimated_platform_fee_cny),
+                snapshot=order_row.snapshot,
                 operations=operations.get(pn, ()),
-                reference_actual_profit_cny=to_decimal(r['actual_profit_cny']),
-                reference_estimated_profit_cny=to_decimal(r['estimated_profit_cny']),
-            ))
-        return tuple(out)
+                expected_operation_ids=self._json_ids(r['linked_operation_ids_json']),
+            )
+            rows.extend(line_rows)
+            unattributed.extend(records)
+            if not line_rows or not line_rows[0].actual_attributable:
+                # 实际利润整单都归不出去（多货号订单，或连商品明细行都没有）——
+                # 交给调用方按订单口径走 evaluate_actual，再计入「未归属」，
+                # 绝不分摊到各 SKU，也绝不静默丢掉。
+                actual_unattributed.append(order_row)
+
+        return SkuDetail(
+            rows=tuple(rows),
+            unattributed=UnattributedAmounts(
+                posting_count=len({rec.posting_number for rec in unattributed
+                                   if rec.posting_number}),
+                records=tuple(unattributed),
+            ),
+            actual_unattributed=tuple(actual_unattributed),
+            order_count=len(posting_rows),
+        )
+
+    def _items_for_postings(self, posting_numbers: Sequence[str]) -> dict:
+        """一次取齐一批订单的商品明细行（货号 / SKU / 商品名 / 数量）。
+
+        这批明细就是**逐 SKU 的分组键**：一个订单只有一个货号时整单归属到它，
+        多个货号时按数据自带的按行金额落位。逐单 N+1 查询在 2000 单上不可接受，
+        所以分批一次取齐（SQLite 的绑定上限是 999）。
+        """
+        out: dict = {}
+        pns = list(posting_numbers)
+        for i in range(0, len(pns), 900):
+            chunk = pns[i:i + 900]
+            for r in self._conn.execute(
+                    'SELECT posting_number, offer_id, sku, product_name, quantity '
+                    'FROM posting_items WHERE posting_number IN (%s) '
+                    'ORDER BY posting_number, offer_id' % ','.join('?' * len(chunk)),
+                    tuple(chunk)):
+                out.setdefault(r['posting_number'], []).append(
+                    (r['offer_id'], r['sku'], r['product_name'], r['quantity']))
+        return {pn: tuple(v) for pn, v in out.items()}
+
+    @staticmethod
+    def _unit_prices(raw_json) -> dict:
+        """`postings.raw_json.products[]` → {货号: 单价}。
+
+        只在**多货号订单**需要按行拆分收入时用到。库里的 `price` 有两种形态
+        （实测同一张表里都有）：字符串 `'40.0000'`，或
+        `{'amount': '32', 'currency': 'CNY'}`。两种都认；认不出就不放进映射，
+        归属逻辑会因此把整单收入判成 `revenue_not_attributable`
+        —— 而不是拿 0 顶替、也不是猜一个比例。
+        """
+        if not raw_json:
+            return {}
+        try:
+            raw = json.loads(raw_json)
+        except ValueError:
+            return {}
+        out: dict = {}
+        for product in (raw.get('products') or []):
+            offer = product.get('offer_id')
+            if not offer:
+                continue
+            price = product.get('price')
+            if isinstance(price, dict):
+                amount = to_decimal(price.get('amount'))
+            else:
+                amount = to_decimal(price)
+            if amount is None:
+                continue
+            out[str(offer)] = amount
+        return out
+
+    def _unit_costs(self) -> dict:
+        """货号 → 单件采购成本（CNY）。两个来源，按优先级合并。
+
+        1. **`sku_cost_cache`（sku → 单件成本）—— 权威来源。**
+           这正是本系统存在的理由：OZON 的两份导出里唯独没有采购成本，
+           必须由我方按 SKU 主动录入。本机这张表当前是 **0 行**，
+           所以下面还有一个反推的兜底。
+        2. **反推**：单货号订单的整单成本 ÷ 数量。
+           单货号订单的成本整单属于那一个货号（实测 11002 单里 10953 单如此），
+           所以这个商就是该货号的单件成本，不需要任何分摊。
+           同一货号出现**两个不同值**时一律不采用 —— 冲突即不可信，
+           宁可界面上多一个「缺成本」，也不拿一个可能错的数当真。
+
+        ⚠️ 第 2 条是**临时方案**（见 docs/adr/0006 的「未解决」一节）：
+        它把「现有系统已经算好的逐单成本」反推成成本库，属于拿结果当输入。
+        接上真的成本库（`sku_cost_cache` 有数据）后，第 2 条自动退居其次。
+        """
+        by_sku: dict = {}
+        try:
+            for r in self._conn.execute('SELECT sku, unit_cost_cny FROM sku_cost_cache'):
+                value = to_decimal(r['unit_cost_cny'])
+                if r['sku'] is not None and value is not None:
+                    by_sku[str(r['sku'])] = value
+        except sqlite3.OperationalError:
+            pass  # 库结构对不上时按「没有成本库」处理，但下面照样会有反推
+
+        out: dict = {}
+        if by_sku:
+            for r in self._conn.execute('SELECT DISTINCT offer_id, sku FROM posting_items'):
+                if not r['offer_id']:
+                    continue
+                key = None if r['sku'] is None else str(r['sku'])
+                value = by_sku.get(key)
+                if value is not None:
+                    out[str(r['offer_id'])] = value
+
+        derived: dict = {}
+        conflict = set()
+        for r in self._conn.execute("""
+            SELECT i.offer_id AS offer_id, i.quantity AS quantity,
+                   p.purchase_cost_cny AS cost
+              FROM posting_items i
+              JOIN postings p ON p.posting_number = i.posting_number
+             WHERE p.purchase_cost_cny IS NOT NULL
+               AND i.posting_number IN (
+                   SELECT posting_number FROM posting_items
+                    GROUP BY posting_number HAVING count(*) = 1)
+        """):
+            cost = to_decimal(r['cost'])
+            quantity = int(r['quantity'] or 0)
+            if cost is None or quantity <= 0 or not r['offer_id']:
+                continue
+            unit = cost / Decimal(quantity)
+            prev = derived.get(str(r['offer_id']))
+            if prev is None:
+                derived[str(r['offer_id'])] = unit
+            elif prev != unit:
+                conflict.add(str(r['offer_id']))
+        for offer_id in conflict:
+            derived.pop(offer_id, None)
+        for offer_id, unit in derived.items():
+            out.setdefault(offer_id, unit)
+        return out
 
     def amounts_for_period(self, store_alias: str, start_date: str,
                            end_date: str) -> PeriodAmounts:

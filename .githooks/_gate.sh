@@ -4,6 +4,7 @@
 #
 #   $1 = commit  普通提交（dev 上）：拒绝在 main 上提交 + 跑快速回归
 #   $1 = merge   合并提交（进 main）：允许在 main 上 + 跑完整回归
+#   $1 = push    推送：完整回归（pre-push 传入）
 #
 # 为什么把模式做成显式参数，而不是靠 MERGE_HEAD 判断：
 #   实测在 pre-merge-commit 执行的那一刻 .git/MERGE_HEAD 尚未写入，
@@ -83,21 +84,27 @@ export PYTHONIOENCODING
 # 两套测试都要过：
 #   core —— 财务口径回归（夹具；合并/推送时跑生产库全量对账）
 #   api  —— 只读看板接口（含 401/403 越权与口径一致性）
+#
+# 2026-09-19：core 的目标从「只跑 test_profit_golden」改成「整个 core/tests」。
+# 起因是新增的 test_sqlite_source_cutoff.py（窗口右端回归，复现过一个真实
+# 事故：days=7 返回 0 单）**不在门禁范围内** —— 一个没人跑的回归测试等于没有。
+# 现在合并/推送跑 `discover -s core/tests`（口径 + Excel 导入 + 窗口边界），
+# 提交仍只跑夹具快跑档（约 2 秒），但会额外跑一遍窗口边界（约 0.1 秒）。
 if [ "$MODE" = "push" ]; then
     echo "[gate] 推送到远端 —— 完整回归（core 全量 + API）"
-    CORE_TARGET="core.tests.test_profit_golden"
+    CORE_ARGS="discover -s core/tests -t ."
 elif [ "$MODE" = "merge" ]; then
     echo "[gate] 合并进 $MAIN_BRANCH —— 完整回归（core 全量 + API）"
-    CORE_TARGET="core.tests.test_profit_golden"
+    CORE_ARGS="discover -s core/tests -t ."
 else
-    echo "[gate] $branch 分支提交 —— 快速回归（core 夹具 + API）"
-    CORE_TARGET="core.tests.test_profit_golden.GoldenFixtureTest"
+    echo "[gate] $branch 分支提交 —— 快速回归（core 夹具 + 窗口边界 + API）"
+    CORE_ARGS="core.tests.test_profit_golden.GoldenFixtureTest core.tests.test_sqlite_source_cutoff"
 fi
 
 rc=0
 
-echo "[gate] $PY -m unittest $CORE_TARGET"
-"$PY" -m unittest $CORE_TARGET
+echo "[gate] $PY -m unittest $CORE_ARGS"
+"$PY" -m unittest $CORE_ARGS
 rc=$?
 
 echo "[gate] $PY -m unittest discover -s api/tests -t ."

@@ -44,7 +44,20 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
       open: viteEnv.VITE_OPEN,
       cors: true,
       // Load proxy configuration from .env.development
-      proxy: createProxy(viteEnv.VITE_PROXY)
+      //
+      // ⚠️ 这里显式追加 OZON 后端代理，并且**不使用** createProxy()：
+      //    createProxy 会 rewrite 掉前缀（/api/xxx -> /xxx），
+      //    而 api/ 的真实路由本身就是 `/api/...`，前缀必须原样保留。
+      //    后端刻意没开 CORS，走这个同源代理后前端直接请求 `/api/...` 即可。
+      //    对象字面量展开在后，因此它的 `/api` 配置会覆盖 .env.development 里的 mock 代理。
+      proxy: {
+        ...createProxy(viteEnv.VITE_PROXY),
+        "/api": {
+          target: "http://127.0.0.1:8849",
+          changeOrigin: true,
+          ws: true
+        }
+      }
     },
     plugins: createVitePlugins(viteEnv),
     // esbuild: {

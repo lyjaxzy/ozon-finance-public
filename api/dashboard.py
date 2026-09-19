@@ -13,10 +13,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Sequence
 
-from core.domain.profit import (completion_rate, evaluate_actual,
-                                evaluate_estimated, quantize_cny, quantize_rate,
+from core.domain.profit import (Posting, SkuLineInput, completion_rate,
+                                evaluate_actual, evaluate_estimated,
+                                evaluate_sku_profit, quantize_cny, quantize_rate,
                                 sum_amounts)
-from core.repository.base import ProfitDataSource
+from core.repository.base import DataCutoff, ProfitDataSource
 from core.repository.sqlite_source import CN_TZ
 
 from . import config
@@ -28,6 +29,30 @@ COMPOSITION_KEYS = (
     ('platform', '平台费用'),
     ('logistics', '物流费用'),
 )
+
+#: 逐 SKU 下钻的排序键白名单。只允许排这几个，避免把任意列名拼进查询/排序。
+SKU_SORT_KEYS = (
+    'estimated_profit_cny', 'actual_profit_cny', 'purchase_cost_cny',
+    'revenue_cny', 'quantity', 'order_count', 'offer_id',
+)
+SKU_DEFAULT_SORT = 'estimated_profit_cny'
+
+#: 缺失原因的**中文标签**。枚举取值来自 core/domain/profit.py，
+#: 这里只做展示映射 —— 判定逻辑一行都不在这里。
+SKU_REASON_LABELS = {
+    'no_settled_sale': '未结算销售',
+    'no_direct_settlement': '无直接净额',
+    'invalid_exchange_rate': '汇率越界',
+    'missing_exchange_rate': '缺结算汇率',
+    'missing_purchase_cost': '缺采购成本',
+    'missing_revenue': '缺收入',
+    'missing_operation': '流水取不全',
+    'platform_subsidy_one_ruble_promotion': '平台补贴 1 卢布促销',
+    'multi_item_posting': '多货号订单，该费用无按货号的分组键',
+    'revenue_not_attributable': '按行收入与订单收入对不上，不摊分',
+    'cost_not_attributable': '按行成本与订单成本对不上，不摊分',
+    'missing_posting_item': '订单没有商品明细行，无法归属到货号',
+}
 
 
 def money(value: Optional[Decimal]) -> Optional[str]:
@@ -66,15 +91,24 @@ def format_cutoff(moment: Optional[datetime]) -> Optional[str]:
     return moment.astimezone(CN_TZ).isoformat()
 
 
-def _period_end(cutoff: Optional[datetime], today: Optional[date]) -> str:
+def _period_end(cutoff: DataCutoff, today: Optional[date]) -> str:
     """窗口右端。
 
-    优先用**库里的数据截止日**而不是系统当天：店铺库是定期同步的，
-    如果按当天取窗口，最后几天永远为空，看板会「看着正常但没有数」。
-    库里没有任何时间戳时才退回系统当天。
+    三级优先，从「数据自己说的」到「机器当天」：
+
+    1. `window_end` —— 最后一个已结算日。这是唯一能保证**窗口最后一天有数**
+       的边界，因为窗口查询的过滤条件就是结算日落在区间内。
+    2. `cutoff.date()` —— 数据源给不出结算日时，退回库里最后一个写入时间。
+       夹具 / 测试替身走这条，与拆分之前逐字相同。
+    3. 系统当天 —— 库里连时间戳都没有时的最后兜底。
+
+    为什么不用系统当天当默认：店铺库是定期同步的，按当天取窗口会让最后
+    几天永远为空，看板会「看着正常但没有数」。
     """
-    if cutoff is not None:
-        return cutoff.date().isoformat()
+    if cutoff is not None and cutoff.window_end is not None:
+        return cutoff.window_end.isoformat()
+    if cutoff is not None and cutoff.cutoff is not None:
+        return cutoff.cutoff.date().isoformat()
     return (today or date.today()).isoformat()
 
 
@@ -83,7 +117,7 @@ def build_dashboard(source: ProfitDataSource, store_alias: str, days: int,
                     order_limit: Optional[int] = None) -> dict:
     """组装一个店铺看板的完整响应体。"""
     cutoff = source.data_cutoff(store_alias)
-    end_date = _period_end(cutoff.cutoff, today)
+    end_date = _period_end(cutoff, today)
     start_date = (date.fromisoformat(end_date)
                   - timedelta(days=days - 1)).isoformat()
 
@@ -232,3 +266,300 @@ def _composition(rows: Sequence, actuals: Sequence) -> list:
         values['platform'] = Decimal('0.00')
     return [{'key': key, 'label': label, 'value_cny': money(values[key])}
             for key, label in COMPOSITION_KEYS]
+
+
+# ══════════════════════════════════════════════════════════════════
+# 逐 SKU 利润下钻（ADR-0006）
+# ══════════════════════════════════════════════════════════════════
+#
+# 与 build_dashboard 的关系：
+#   * **不改** build_dashboard 的响应形状（前端依赖它）；
+#   * 窗口的算法**逐字复用**（data_cutoff + days），否则下钻明细的合计
+#     会与指标卡对不上，而那种「差一点」最容易被当成 bug；
+#   * 利润一律来自 core/domain/profit.py：逐 SKU 走 evaluate_sku_profit，
+#     订单口径走 evaluate_actual / evaluate_estimated。这里只做 Decimal→字符串。
+#
+# 本文件仍然**没有任何利润公式**。
+
+def _sku_line(row) -> SkuLineInput:
+    """仓储层的取数行 → 领域层的输入。只做字段搬运，不做计算。"""
+    return SkuLineInput(
+        offer_id=row.offer_id,
+        posting_number=row.posting_number,
+        sku=row.sku,
+        product_name=row.product_name,
+        quantity=row.quantity,
+        revenue_cny=row.revenue_cny,
+        purchase_cost_cny=row.purchase_cost_cny,
+        logistics_cost_cny=row.logistics_cost_cny,
+        platform_fee_cny=row.platform_fee_cny,
+        snapshot=row.snapshot,
+        operations=row.operations,
+        expected_operation_ids=row.expected_operation_ids,
+        actual_attributable=row.actual_attributable,
+        actual_unknown_reason=row.actual_unknown_reason,
+        revenue_unknown_reason=row.revenue_unknown_reason,
+        cost_unknown_reason=row.cost_unknown_reason,
+        logistics_unknown_reason=row.logistics_unknown_reason,
+        platform_fee_unknown_reason=row.platform_fee_unknown_reason,
+    )
+
+
+def _reason_label(reason) -> Optional[str]:
+    if reason is None:
+        return None
+    return SKU_REASON_LABELS.get(reason, reason)
+
+
+def _unattributed_summary(records, posting_count: int) -> dict:
+    """把「归不出去的金额」按字段汇总，并留下原因分布。
+
+    这个区块是 honest-by-construction 的落点：**逐 SKU 合计 + 未归属 = 订单口径合计**。
+    少了它，归不出去的钱就只能被悄悄摊掉或被丢掉 —— 两者都是本项目禁止的。
+    """
+    fields = {}
+    for name in ('revenue_cny', 'purchase_cost_cny', 'logistics_cny', 'platform_fee_cny'):
+        values = [rec.amount for rec in records
+                  if rec.field == name and rec.amount is not None]
+        fields[name] = sum_amounts(values) if values else None
+
+    grouped: dict = {}
+    for rec in records:
+        entry = grouped.setdefault((rec.reason, rec.field),
+                                   {'reason': rec.reason, 'field': rec.field,
+                                    'amounts': [], 'postings': set()})
+        if rec.amount is not None:
+            entry['amounts'].append(rec.amount)
+        if rec.posting_number:
+            entry['postings'].add(rec.posting_number)
+    reasons = []
+    for (reason, field), entry in sorted(grouped.items()):
+        reasons.append({
+            'reason': reason,
+            'label': SKU_REASON_LABELS.get(reason, reason),
+            'field': field,
+            'posting_count': len(entry['postings']),
+            'amount_cny': money(sum_amounts(entry['amounts']))
+            if entry['amounts'] else None,
+        })
+
+    has_records = bool(records)
+    estimate = evaluate_estimated(Posting(
+        posting_number='<unattributed>',
+        status=None,
+        revenue_cny=fields['revenue_cny'],
+        purchase_cost_cny=fields['purchase_cost_cny'],
+        logistics_cost_cny=fields['logistics_cny'],
+        estimated_platform_fee_cny=fields['platform_fee_cny'],
+    ))
+    return {
+        'posting_count': posting_count,
+        'revenue_cny': money(fields['revenue_cny']),
+        'purchase_cost_cny': money(fields['purchase_cost_cny']),
+        'logistics_cny': money(fields['logistics_cny']),
+        'platform_fee_cny': money(fields['platform_fee_cny']),
+        # §7.2 的权威实现直接复用：未归属的四项拼成一个合成订单喂进去，
+        # 于是「缺失项按 0」这套约定与订单口径逐字一致，不必在这里再写一遍减法。
+        'estimated_profit_cny': (money(estimate.estimated_profit_cny)
+                                 if has_records else None),
+        'reasons': reasons,
+    }
+
+
+def _order_level_totals(source: ProfitDataSource, store_alias: str,
+                        start_date: str, end_date: str) -> dict:
+    """**订单口径**的独立取数与计算 —— 逐 SKU 对账的右半边。
+
+    刻意走 `orders_for_period` + 领域层，也就是看板自己那条路径：
+    这样对账比的是「两条独立路径有没有漂移」，而不是「同一段代码等于它自己」。
+    """
+    rows = source.orders_for_period(store_alias, start_date, end_date)
+    if not rows:
+        return {'order_count': 0, 'revenue_cny': None, 'purchase_cost_cny': None,
+                'logistics_cny': None, 'platform_fee_cny': None,
+                'estimated_profit_cny': None, 'actual_profit_cny': None}
+    actuals = [evaluate_actual(r.snapshot, r.operations, r.expected_operation_ids)
+               for r in rows]
+    postings = [r.posting for r in rows if r.posting is not None]
+    actual_ok = [a.actual_profit_cny for a in actuals if a.complete]
+    estimated_ok = [evaluate_estimated(p).estimated_profit_cny for p in postings]
+    return {
+        'order_count': len(rows),
+        'revenue_cny': money(_total(p.revenue_cny for p in postings)),
+        'purchase_cost_cny': money(_total(p.purchase_cost_cny for p in postings)),
+        'logistics_cny': money(_total(p.logistics_cost_cny for p in postings)),
+        'platform_fee_cny': money(_total(p.estimated_platform_fee_cny for p in postings)),
+        'estimated_profit_cny': money(sum_amounts(estimated_ok)) if postings else None,
+        'actual_profit_cny': money(sum_amounts(actual_ok)) if actual_ok else None,
+    }
+
+
+def build_sku_detail(source: ProfitDataSource, store_alias: str, days: int,
+                     limit: Optional[int] = None, offset: int = 0,
+                     sort: str = SKU_DEFAULT_SORT, desc: bool = True,
+                     query: Optional[str] = None,
+                     today: Optional[date] = None) -> dict:
+    """组装逐 SKU 利润下钻的响应体。
+
+    排序 / 搜索 / 分页**只影响下发条数**，不影响任何合计数：
+    合计一律在全窗口的完整集合上算，否则「翻页看到的和」与「指标卡」会差。
+    """
+    cutoff = source.data_cutoff(store_alias)
+    end_date = _period_end(cutoff, today)
+    start_date = (date.fromisoformat(end_date)
+                  - timedelta(days=days - 1)).isoformat()
+
+    detail = source.sku_detail_for_period(store_alias, start_date, end_date)
+    profits = list(evaluate_sku_profit([_sku_line(r) for r in detail.rows]))
+
+    # ── 合计（全窗口，不受搜索/分页影响）──
+    rows = detail.rows
+    sku_revenue = _total(r.revenue_cny for r in rows)
+    sku_cost = _total(r.purchase_cost_cny for r in rows)
+    sku_logistics = _total(r.logistics_cost_cny for r in rows)
+    sku_fee = _total(r.platform_fee_cny for r in rows)
+    sku_estimate = sum_amounts(p.estimated_profit_reconciled_cny for p in profits) \
+        if rows else None
+    sku_actual = (sum_amounts(p.actual_profit_reconciled_cny for p in profits)
+                  if any(p.actual_reconciled_count for p in profits) else None)
+    complete_est = [p.estimated_profit_cny for p in profits
+                    if p.estimated_profit_cny is not None]
+    complete_act = [p.actual_profit_cny for p in profits
+                    if p.actual_profit_cny is not None]
+
+    unattributed = _unattributed_summary(detail.unattributed.records,
+                                         detail.unattributed.posting_count)
+    un_actual_ok = [evaluate_actual(r.snapshot, r.operations, r.expected_operation_ids)
+                    for r in detail.actual_unattributed]
+    un_actual = [a.actual_profit_cny for a in un_actual_ok if a.complete]
+
+    # ── 搜索 / 排序 / 分页 ──
+    needle = (query or '').strip().lower()
+    if needle:
+        matched = [p for p in profits if _sku_matches(p, needle)]
+    else:
+        matched = list(profits)
+    matched.sort(key=lambda p: p.offer_id)
+    missing = [p for p in matched if getattr(p, sort) is None]
+    present = [p for p in matched if getattr(p, sort) is not None]
+    present.sort(key=lambda p: getattr(p, sort), reverse=bool(desc))
+    # 缺失值永远排在最后：排「利润最高」时不该把「算不出来」顶到第一位
+    ordered = present + missing
+    page = ordered[offset:offset + limit] if limit is not None else ordered[offset:]
+
+    # ── 订单口径（独立路径）与对账 ──
+    order_level = _order_level_totals(source, store_alias, start_date, end_date)
+    sku_level = {
+        'order_count': detail.order_count,
+        'revenue_cny': money(sku_revenue),
+        'purchase_cost_cny': money(sku_cost),
+        'logistics_cny': money(sku_logistics),
+        'platform_fee_cny': money(sku_fee),
+        'estimated_profit_cny': money(sku_estimate),
+        'actual_profit_cny': money(sku_actual),
+    }
+    matches = {}
+    for key in ('revenue_cny', 'purchase_cost_cny', 'logistics_cny',
+                'platform_fee_cny', 'estimated_profit_cny', 'actual_profit_cny'):
+        un_side = unattributed.get(key)
+        if key == 'actual_profit_cny':
+            un_side = money(sum_amounts(un_actual)) if un_actual else None
+        left = sum_amounts([_dec(sku_level[key]), _dec(un_side)])
+        right = _dec(order_level[key])
+        matches[key] = bool(left == right)
+    matches['order_count'] = detail.order_count == order_level['order_count']
+
+    return {
+        'store_alias': store_alias,
+        'data_cutoff': format_cutoff(cutoff.cutoff),
+        'period': {'start': start_date, 'end': end_date, 'days': days},
+        'query': {'sort': sort, 'desc': bool(desc), 'q': query or None,
+                  'limit': limit, 'offset': offset,
+                  'sort_keys': list(SKU_SORT_KEYS)},
+        'totals': {
+            'sku_count': len(profits),
+            'matched_sku_count': len(ordered),
+            'returned_count': len(page),
+            'truncated': len(ordered) > offset + len(page),
+            'order_count': detail.order_count,
+            'missing_cost_sku_count': sum(1 for p in profits
+                                          if p.purchase_cost_cny is None),
+            'incomplete_sku_count': sum(1 for p in profits if not p.complete),
+            'estimated_incomplete_sku_count': sum(1 for p in profits
+                                                  if not p.estimated_complete),
+            'actual_incomplete_sku_count': sum(1 for p in profits
+                                               if not p.actual_complete),
+            'quantity': sum(int(r.quantity or 0) for r in rows),
+            'revenue_cny': money(sku_revenue),
+            'purchase_cost_cny': money(sku_cost),
+            'logistics_cny': money(sku_logistics),
+            'platform_fee_cny': money(sku_fee),
+            'estimated_profit_cny': money(sku_estimate),
+            'actual_profit_cny': money(sku_actual),
+            'estimated_profit_complete_only_cny': (
+                money(sum_amounts(complete_est)) if complete_est else None),
+            'actual_profit_complete_only_cny': (
+                money(sum_amounts(complete_act)) if complete_act else None),
+        },
+        'unattributed': dict(unattributed,
+                             actual_profit_cny=(money(sum_amounts(un_actual))
+                                                if un_actual else None),
+                             actual_posting_count=len(detail.actual_unattributed)),
+        'reconciliation': {
+            'sku_level': sku_level,
+            'order_level': order_level,
+            'matches': matches,
+            'note': ('逐 SKU 合计 + 未归属 = 订单口径合计。'
+                     '订单口径走看板同一条路径（orders_for_period + 领域层）。'),
+        },
+        'rows': [_sku_row(p) for p in page],
+    }
+
+
+def _dec(value) -> Decimal:
+    """把下发的字符串金额还原成 Decimal；None/空串按 0（求和时才用）。"""
+    if value is None or value == '':
+        return Decimal('0')
+    return Decimal(str(value))
+
+
+def _total(values) -> Optional[Decimal]:
+    """有值才求和；**一个值都没有时返回 None**。
+
+    这条与 `money()` 的注释是同一件事：缺数据和零是两回事。
+    逐 SKU 下钻里「平台佣金一个数都没有」必须下发 null，
+    写成 `0.00` 会让人以为「这个窗口的平台佣金是零」。
+    """
+    present = [v for v in values if v is not None]
+    return sum_amounts(present) if present else None
+
+
+def _sku_matches(profit, needle: str) -> bool:
+    for value in (profit.offer_id, profit.sku, profit.product_name):
+        if value and needle in str(value).lower():
+            return True
+    return False
+
+
+def _sku_row(profit) -> dict:
+    """一个 SKU 的下发行。金额一律字符串（与现有接口一致）。"""
+    return {
+        'offer_id': profit.offer_id,
+        'sku': profit.sku,
+        'product_name': profit.product_name,
+        'quantity': int(profit.quantity),
+        'order_count': int(profit.order_count),
+        'revenue_cny': money(profit.revenue_cny),
+        'purchase_cost_cny': money(profit.purchase_cost_cny),
+        'logistics_cny': money(profit.logistics_cny),
+        'platform_fee_cny': money(profit.platform_fee_cny),
+        'estimated_profit_cny': money(profit.estimated_profit_cny),
+        'actual_profit_cny': money(profit.actual_profit_cny),
+        'estimated_complete': bool(profit.estimated_complete),
+        'actual_complete': bool(profit.actual_complete),
+        'complete': bool(profit.complete),
+        'unknown_reason': profit.unknown_reason,
+        'unknown_reason_label': _reason_label(profit.unknown_reason),
+        'missing_fields': list(profit.missing_fields),
+        'incomplete_order_count': int(profit.incomplete_order_count),
+    }

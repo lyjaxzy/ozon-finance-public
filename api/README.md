@@ -1,4 +1,4 @@
-﻿# api —— OZON 财务系统只读后端 API
+# api —— OZON 财务系统只读后端 API
 
 FastAPI 应用，**只读**。利润口径全部来自 `core/domain/profit.py`，
 数据全部来自 `core/repository/`，本目录不自己写 SQL、也不自建数据模型。
@@ -67,6 +67,7 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
 | POST | `/api/auth/login` | `{username, password}` → `{access_token, token_type, expires_in, user}` | 否 |
 | GET | `/api/auth/me` | → `{user, stores[]}`，`stores` 只含**该用户可见**的店铺 | 是 |
 | GET | `/api/dashboard/store/{alias}?days=14` | 单店看板 | 是 |
+| GET | `/api/dashboard/store/{alias}/sku-detail?days=14` | **逐 SKU 利润下钻**（ADR-0006） | 是 |
 | GET | `/api/health` | → `{status, data_source_readonly, store_aliases, orders_in_response_limit}` | 否 |
 | GET | `/api/health/store/{alias}` | 店铺库连通性自检（只回布尔量，不含业务数据） | 否 |
 
@@ -79,7 +80,7 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
 ```json
 {
   "store_alias": "store_alpha",
-  "data_cutoff": "2026-09-11T01:16:21.605343+08:00",
+  "data_cutoff": "2026-09-11T00:46:47.314183+08:00",
   "period": {"start": "2026-08-28", "end": "2026-09-10", "days": 14},
   "totals": {
     "actual_profit_cny": "48215.95",
@@ -87,7 +88,7 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
     "completion_rate": "1.0000",
     "complete_order_count": 1978,
     "total_order_count": 1978,
-    "overdue_count": 28
+    "overdue_count": 16
   },
   "trend": [
     {"date": "2026-08-28", "actual_profit_cny": "2909.19", "estimated_profit_cny": "2967.00"}
@@ -116,9 +117,94 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
 金额与汇率**一律是字符串**（前端决定怎么显示），避免 JS 浮点误差。
 字符串一律 2 位小数（汇率 4 位），缺失值是 `null`，**不是 `"0.00"`**。
 
-`data_cutoff` 是库里最后一个可观测写入时间（UTC 存储 → 换算成北京时间下发）。
-窗口右端取它的日期，而**不是**系统当天 —— 店铺库是定期同步的，
-按当天取窗口会让最后几天永远为空，看板「看着正常但没有数」。
+响应体里有**两个时间边界，它们不是一回事**（详见 ADR-0007）：
+
+| 字段 | 是什么 | 怎么来的 |
+|---|---|---|
+| `data_cutoff` | 「这份数据什么时候同步进来的」 | 财务表 `updated_at` 的最大值（UTC 存储 → 换算成北京时间下发） |
+| `period.end` | 窗口右端：「窗口排到哪天」 | 锁定快照里最大的 `settlement_date` |
+
+窗口右端取的是 **`period.end`（最后一个已结算日）**，不是 `data_cutoff`，
+也**不是**系统当天：
+
+* 用系统当天 → 店铺库是定期同步的，最后几天永远为空，看板「看着正常但没有数」；
+* 用 `data_cutoff` → 写入时间会被同步动作刷新到数据之后（**真实踩过的坑**：
+  财务同步停在 09-10，逾期扫描在 09-19 跑过，`days=7` 的窗口
+  09-13~09-19 里一天财务数据都没有，接口返回 0 单 / `actual_profit_cny: null`）。
+
+上面这个例子里两者正好差一天（`data_cutoff` 是北京 09-11 凌晨的那次同步，
+数据覆盖到 09-10），这是正常的：它们回答的是两个不同的问题。
+
+### 逐 SKU 下钻响应形状（ADR-0006）
+
+**这是独立接口、独立响应形状**：现有看板那份被前端依赖，加字段进去会一起坏。
+
+```
+GET /api/dashboard/store/{alias}/sku-detail?days=14&limit=500&offset=0
+    &sort=estimated_profit_cny&desc=true&q=货号或SKU或商品名
+```
+
+```json
+{
+  "store_alias": "store_alpha",
+  "data_cutoff": "2026-09-11T00:46:47.314183+08:00",
+  "period": {"start": "2026-08-28", "end": "2026-09-10", "days": 14},
+  "query": {"sort": "estimated_profit_cny", "desc": true, "q": null,
+            "limit": 500, "offset": 0, "sort_keys": ["..."]},
+  "totals": {
+    "sku_count": 115, "matched_sku_count": 115, "returned_count": 115, "truncated": false,
+    "order_count": 1978, "missing_cost_sku_count": 3, "incomplete_sku_count": 7,
+    "quantity": 2127,
+    "revenue_cny": "87041.27", "purchase_cost_cny": "26082.88",
+    "logistics_cny": "14831.53", "platform_fee_cny": null,
+    "estimated_profit_cny": "46126.86", "actual_profit_cny": "48085.27",
+    "estimated_profit_complete_only_cny": "45882.38",
+    "actual_profit_complete_only_cny": "47205.61"
+  },
+  "unattributed": {
+    "posting_count": 3, "actual_posting_count": 5,
+    "revenue_cny": null, "purchase_cost_cny": "22.85",
+    "logistics_cny": "21.72", "platform_fee_cny": null,
+    "estimated_profit_cny": "-44.57", "actual_profit_cny": "130.68",
+    "reasons": [{"reason": "cost_not_attributable", "label": "按行成本与订单成本对不上，不摊分",
+                 "field": "purchase_cost_cny", "posting_count": 2, "amount_cny": "22.85"},
+                {"reason": "multi_item_posting", "label": "多货号订单，该费用无按货号的分组键",
+                 "field": "logistics_cny", "posting_count": 2, "amount_cny": "21.72"}]
+  },
+  "reconciliation": {
+    "sku_level": {"order_count": 1978, "revenue_cny": "87041.27", "...": "..."},
+    "order_level": {"order_count": 1978, "revenue_cny": "87041.27", "...": "..."},
+    "matches": {"revenue_cny": true, "purchase_cost_cny": true, "logistics_cny": true,
+                "platform_fee_cny": true, "estimated_profit_cny": true,
+                "actual_profit_cny": true, "order_count": true},
+    "note": "逐 SKU 合计 + 未归属 = 订单口径合计。"
+  },
+  "rows": [
+    {
+      "offer_id": "csx-6.11-45", "sku": "3307891350", "product_name": "Плетеная корзина ...",
+      "quantity": 1655, "order_count": 1538,
+      "revenue_cny": "70638.00", "purchase_cost_cny": "21481.90",
+      "logistics_cny": null, "platform_fee_cny": null,
+      "estimated_profit_cny": "36820.43", "actual_profit_cny": "40371.99",
+      "estimated_complete": true, "actual_complete": true, "complete": true,
+      "unknown_reason": null, "unknown_reason_label": null,
+      "missing_fields": ["logistics_cny", "platform_fee_cny"], "incomplete_order_count": 0
+    }
+  ]
+}
+```
+
+读这份响应的四条要点：
+
+1. **`purchase_cost_cny` 是 `null` 就是「缺成本」**，不是 0 —— 前端必须显示明确标记，
+   而且该 SKU 的 `estimated_profit_cny` / `actual_profit_cny` 也会是 `null`。
+2. **`totals` / `unattributed` / `reconciliation` 都是全窗口口径**，
+   不随 `q` / `sort` / `limit` / `offset` 变化。搜索后「表里的行加起来 ≠ 上面的合计」是正常的。
+3. **`unattributed` 是「归不到货号的金额」**，一分钱都不摊、也不丢：
+   逐 SKU 合计 + 未归属 = 订单口径合计（`reconciliation.matches` 就是这个等式的结果）。
+4. `sort` 只接受白名单（`estimated_profit_cny` / `actual_profit_cny` / `purchase_cost_cny` /
+   `revenue_cny` / `quantity` / `order_count` / `offer_id`），越界 422；
+   `limit` 上限 500。数据源不支持下钻（夹具）时返回 **501**，不返回空表。
 
 ## 4. 认证方式
 
@@ -178,11 +264,15 @@ root 不能删除/停用自己（PRD §9.2）：约束落在 `api/users.py` 的
 | 别名 | 库路径 | 授权给 |
 |---|---|---|
 | `store_alpha` | `<DATA_ROOT>\data\stores\store_alpha.db` | root / finance01 / operator01 |
-| `store_beta` | 同上路径把 `store_alpha` 换成 `store_beta`（**该库当前不存在**） | 仅 root |
+| `store_beta` | 同上路径把 `store_alpha` 换成 `store_beta`（**实测该库真实存在**，见下方更正） | 仅 root |
 
-`store_beta` 的库文件不存在是**有意为之**：它只用来证明「运营/财务拿不到它」，
-而 root 请求它会得到 503（服务端配置故障）而不是 403。要真正启用二店，
-把库文件放到位即可。
+`store_beta` 的库**真实存在**（7.3 MB / 45 单，2026-09-18 实测，见文末「更正记录」）。
+它同时承担两件事：证明「运营/财务拿不到它」（他们只被授权 `store_alpha`，
+访问它得到 **403**），以及证明 root 能看到第二个店铺（得到真实数据，不是 404/503）。
+
+> 历史说明（已被更正）：本文档曾称该库不存在、root 访问返回 503。
+> 若要新增一个**尚未就位**的店铺别名，正确行为是 503 而不是 404 ——
+> 别名注册了但库没到位属于服务端配置故障，用 503 让运维看得见。
 
 白名单用环境变量覆盖：
 
@@ -216,17 +306,22 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 
 | 方法 | 作用 | 路径 |
 |---|---|---|
-| `data_cutoff(alias)` | 最后一个可观测写入时间 | `base.DataCutoff` |
+| `data_cutoff(alias)` | 两个时间边界：`cutoff`（写入时间，展示用）与 `window_end`（最后一个已结算日，**窗口右端**） | `base.DataCutoff` |
 | `orders_for_period(alias, start, end, limit, offset)` | 窗口内的订单，**带齐喂给领域层的输入** | 看板权威路径 |
 | `amounts_for_period(alias, start, end)` | 窗口合计（廉价路径，一次 SQL 扫描） | 对账/告警 |
 | `daily_amounts(alias, start, end)` | 按天汇总（廉价路径） | 对账/告警 |
 | `overdue_count(alias)` | 逾期单数 | → `base.OverdueInfo` |
 | `direct_net_totals(alias, start, end)` | 直接净额逐单取数/汇率（要按每单汇率折算才能相加） | `amounts_for_period` 内部 |
+| `sku_detail_for_period(alias, start, end)` | 逐 SKU 明细行 + 归不出去的金额（ADR-0006） | 下钻接口 |
 
 时间窗口的约定（两种实现必须一致）：
 
 * 订单属于哪个窗口，由**锁定结算快照的 `settlement_date`** 决定 ——
   它一旦锁定就不再变化，同一订单重复查询落点稳定。
+* **窗口右端 = 锁定快照里最大的 `settlement_date`**（`DataCutoff.window_end`），
+  不能用任何 `updated_at`：写入时间来自同步动作，可以整体刷新到数据之后，
+  而窗口查询的过滤条件恰恰是结算日落在区间内 —— 右端越过去就必然是空窗。
+  这条口径与上面那条必须写在同一个地方，Postgres 迁移时不要只搬一半（ADR-0007）。
 * 只有 `state='locked'` 的快照算「已结算」；没有锁定快照的订单不属于任何窗口。
 * 日期按 `YYYY-MM-DD` 字符串比较。
 
@@ -260,12 +355,17 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 
 ### 8.2 没能实现 / 需要业务确认
 
-1. **逾期数不按看板窗口过滤**。取自 `overdue_fast_current`（当前生效的那次扫描，
-   本库 28 单）。这张表存的是**当前**在途逾期集合，不是历史每日快照，
-   按窗口过滤只会把结果打成 0。所以 `totals.overdue_count` 是「截至数据截止时刻的
-   当前逾期单数」，与 `period` 无关。
-2. **逾期口径的时效与 `data_cutoff` 同源**：都来自 `overdue_fast_scans.updated_at`，
-   所以它们永远一致，但也意味着**逾期扫描停了，截止时间就不动了**。
+1. **逾期数不按看板窗口过滤**。取自 `overdue_fast_current`（当前生效的那次扫描）。
+   这张表存的是**当前**在途逾期集合，不是历史每日快照，
+   按窗口过滤只会把结果打成 0。所以 `totals.overdue_count` 是「截至最近一次
+   逾期扫描的当前逾期单数」，与 `period` 无关。
+2. **逾期口径与窗口右端来自两个互不相干的表**（2026-09-19 修正）：
+   `overdue_count` 来自 `overdue_fast_scans`（运营扫描，本库最后更新 09-19），
+   窗口右端来自 `settlement_snapshots.settlement_date`（财务结算，最后 09-10）。
+   **两者故意不同步** —— 曾经让 `data_cutoff` 取所有表 `updated_at` 的最大值，
+   于是「昨天扫过逾期」会把窗口右端推到财务数据之后，`days=7` 直接返回 0 单。
+   现在 `overdue_fast_scans.updated_at` 只记录在 `DataCutoff.candidates` 里
+   供排查，不参与任何判断（ADR-0007）。
 3. **`composition.platform` 恒为 `"0.00"`**：`postings.estimated_platform_fee_cny`
    在全库（10,903 单）**全部为空**，只有 547 单的 `platform_fees_cny` 有值。
    这里按前端展示需要折成 0.00，**不是真实平台费用**。
@@ -282,9 +382,12 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
    （4231 单没有锁定快照的，`actual_complete` 都是 0）。
    要看「未完成」的分布，得把窗口定义改成「按订单创建月」之类的另一套口径 ——
    那属于业务定义，本次没有擅自改。
-6. **没有按 SKU / 商品维度的聚合**，也没有 §7.4 回款测算（core 也未实现）。
-7. **`store_beta` 的库文件不存在**，root 访问它返回 503，不是 404 ——
-   别名注册了但库没到位属于服务端配置故障，用 503 让运维看得见。
+6. ~~**没有按 SKU / 商品维度的聚合**~~ —— 已实现，见
+   `GET /api/dashboard/store/{alias}/sku-detail`（ADR-0006）。
+   仍未实现的是 **§7.4 回款测算**（core 也没有）。
+7. ~~**`store_beta` 的库文件不存在**~~ —— **此条已作废，见文末「更正记录」**。
+   该库真实存在，root 访问它返回真实数据（45 单）；
+   「注册了但库没到位」应返回 503 而不是 404（配置故障要让运维看见）。
 
 ### 8.3 数据来源对照
 
@@ -302,7 +405,8 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 | `composition.purchase` | `Σ` 各单 `evaluate_actual(...).purchase_cost_cny` |
 | `composition.platform` | `postings.estimated_platform_fee_cny`（当前全为空 → 0.00） |
 | `composition.logistics` | `Σ postings.logistics_cost_cny` |
-| `data_cutoff` | `max`(快照 `updated_at`, 事实表 `updated_at`, 逾期扫描 `updated_at`) → 北京时间 |
+| `period.end` | 锁定快照里最大的 `settlement_date`（= `DataCutoff.window_end`），**不是** `data_cutoff` |
+| `data_cutoff` | `max`(快照 `updated_at`, 事实表 `updated_at`, 流水表 `updated_at`) → 北京时间；**只用于展示**，见 ADR-0007 |
 
 ### 8.4 只读保证
 
@@ -310,3 +414,28 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
   （尝试 `CREATE TABLE` 必须抛 `OperationalError`），失败即启动失败。
 * `api/` 下没有任何写路由；SQL 全是 `SELECT`。
 * 有一条测试（`test_source_is_readonly`）在真实库上再验一次。
+
+---
+
+## 更正记录
+
+### 2026-09-18：`store_beta` 库**确实存在**，此前文档写错了
+
+本文档原先称「`store_beta` 库文件不存在，注册该别名只为让 403 分支可复现」。
+**这是错的。** 实测：
+
+```
+<DATA_ROOT>\data\stores\store_beta.db   7.3 MB，真实存在
+```
+
+影响：
+
+- root 访问 `/api/dashboard/store/store_beta` 返回的是**真实数据**（45 单），
+  不是文档原先描述的 503。这是正确行为 —— root 本就该能访问全部店铺。
+- **403 分支仍然可复现，但要用受限角色**（`finance01` / `operator01`），
+  它们只能访问 `store_alpha`，访问 `store_beta` 得到 403。
+  这一点在测试里已经这么写了，不受影响。
+- 白名单注册 `store_beta` 本身没有问题，无需改动。
+
+教训：文档里的环境断言也要实测。这条是前端联调时发现的（对方登录 root
+访问 `store_beta` 拿到的是真实数据，与文档描述不符才报上来）。
