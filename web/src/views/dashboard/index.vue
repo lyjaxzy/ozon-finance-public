@@ -201,20 +201,34 @@
       </div>
 
       <!-- 5. 订单明细表（多店合计时不下发订单明细：它是单店口径） -->
-      <div v-else class="card">
+      <div v-else ref="ordersCardRef" class="card">
         <div class="card-head">
           <h3 class="card-title">订单明细</h3>
           <span class="card-tip">
-            本窗口共 {{ totals?.total_order_count ?? 0 }} 单，当前第 {{ page }} 页 / 共 {{ pageCount }} 页
-            （每页 {{ pageSize }} 条，服务端分页）· 合计口径以上方指标卡为准
+            本窗口共 {{ totals?.total_order_count ?? 0 }} 单，服务端分页 · 合计口径以上方指标卡为准
           </span>
         </div>
+        <!-- 表格上方也放一个紧凑翻页条：进到这张卡片就能立刻翻页，
+             不用先滚过 20 行（也顺带解决「以为没有翻页按钮」） -->
+        <TablePager
+          compact
+          :page="page"
+          :page-count="pageCount"
+          :total="totals?.total_order_count ?? 0"
+          :page-size="pageSize"
+          :page-sizes="pageSizeOptions"
+          :loading="loading"
+          unit="单"
+          @update:page="page = $event"
+          @change="onPageChange"
+        />
         <el-table
           v-loading="loading"
           element-loading-text="正在取订单明细…"
           :data="orders"
           stripe
           class="order-table"
+          :max-height="520"
           :header-cell-style="{ textAlign: 'right' }"
         >
           <el-table-column prop="posting_number" label="订单号" min-width="150" align="left" fixed />
@@ -255,19 +269,21 @@
             <el-empty description="这一页没有订单" :image-size="96" />
           </template>
         </el-table>
-        <!-- 服务端分页：翻页会重新请求，合计始终是整个窗口的口径 -->
-        <div class="pager">
-          <el-pagination
-            v-model:current-page="page"
-            v-model:page-size="pageSize"
-            :page-sizes="pageSizeOptions"
-            :total="totals?.total_order_count ?? 0"
-            background
-            layout="total, sizes, prev, pager, next, jumper"
-            @current-change="loadData"
-            @size-change="onPageSizeChange"
-          />
-        </div>
+        <!-- 表格下方：完整翻页条（含每页条数与跳页）。表格已限高内部滚动，
+             所以它始终紧跟在表格后面，不会被 20 行数据顶到很远的地方 -->
+        <TablePager
+          :page="page"
+          :page-count="pageCount"
+          :total="totals?.total_order_count ?? 0"
+          :page-size="pageSize"
+          :page-sizes="pageSizeOptions"
+          :loading="loading"
+          unit="单"
+          @update:page="page = $event"
+          @update:page-size="pageSize = $event"
+          @change="onPageChange"
+          @size-change="onPageSizeChange"
+        />
       </div>
     </template>
 
@@ -305,6 +321,7 @@
 
 <script setup lang="ts" name="dashboard">
 import {
+  ArrowLeft,
   ArrowRight,
   Calendar,
   Clock,
@@ -336,6 +353,7 @@ import {
 import { useStoreStore } from "@/stores/modules/store";
 
 import SkuDetailDrawer from "./components/SkuDetailDrawer.vue";
+import TablePager from "./components/TablePager.vue";
 
 /**
  * 店铺选择来自 **URL query**（`?stores=a,b`），不在组件里另存一份状态。
@@ -754,6 +772,24 @@ const onPageSizeChange = () => {
   loadData();
 };
 
+/** 订单明细卡片的 DOM 引用：翻页后把它的顶部滚回视野 */
+const ordersCardRef = ref<HTMLElement | null>(null);
+
+/** 翻页后把订单卡片顶部滚回视野（表格已限高内部滚动，这里只滚一次页面） */
+const scrollOrdersToTop = () => ordersCardRef.value?.scrollIntoView({ block: "start", behavior: "smooth" });
+
+/**
+ * 页码变化（`TablePager` 已经把新页码写回 `page`）→ 只负责取数。
+ *
+ * ⚠️ 不要在这里判断「目标页是否等于当前页」：Element Plus 会先 emit
+ * `update:current-page` 再 emit `current-change`，那时两者已经相等，
+ * 判断的结果是「永远不动」—— 这正是「点了没反应」的经典写法。
+ */
+const onPageChange = async () => {
+  await loadData();
+  scrollOrdersToTop();
+};
+
 /** 从逐店明细跳该店的单店看板（合计模式下的出口） */
 const openSingleStore = (alias: string) => {
   page.value = 1;
@@ -907,12 +943,7 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-/* 分页条：贴右对齐，与表格留一点间距 */
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
+/* 翻页条的样式统一在 components/TablePager.vue 里（看板与逐 SKU 抽屉共用） */
 
 /* 首次加载：骨架屏 */
 .dashboard-loading {
