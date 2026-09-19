@@ -14,9 +14,9 @@ from decimal import Decimal
 from typing import Optional, Sequence
 
 from core.domain.profit import (Posting, SkuLineInput, completion_rate,
-                                evaluate_actual, evaluate_estimated,
-                                evaluate_sku_profit, quantize_cny, quantize_rate,
-                                sum_amounts)
+                                completion_rate_from_counts, evaluate_actual,
+                                evaluate_estimated, evaluate_sku_profit,
+                                quantize_cny, quantize_rate, sum_amounts)
 from core.repository.base import DataCutoff, ProfitDataSource
 from core.repository.sqlite_source import CN_TZ
 
@@ -114,17 +114,39 @@ def _period_end(cutoff: DataCutoff, today: Optional[date]) -> str:
 
 def build_dashboard(source: ProfitDataSource, store_alias: str, days: int,
                     today: Optional[date] = None,
-                    order_limit: Optional[int] = None) -> dict:
-    """组装一个店铺看板的完整响应体。"""
-    cutoff = source.data_cutoff(store_alias)
-    end_date = _period_end(cutoff, today)
+                    order_limit: Optional[int] = None,
+                    order_offset: int = 0,
+                    cutoff: Optional[DataCutoff] = None,
+                    window_end: Optional[date] = None) -> dict:
+    """组装一个店铺看板的完整响应体。
+
+    三个可选参数都是给「多店合计」与「服务端分页」用的，默认值让单店行为
+    与加它们之前逐字相同：
+
+    * `cutoff` —— 已经取过的 `DataCutoff`。多店合计时要先按各店的
+      `window_end` 算出共同窗口，再逐个店组装；不传就现取（单店路径）。
+    * `window_end` —— **强制窗口右端**。多店合计时必须让所有店用同一个区间，
+      否则「合计」是几个不同期间相加（ADR-0008 §二）。单店不传，走
+      `_period_end(cutoff)` 的既有逻辑。
+    * `order_offset` —— orders 数组的起始下标（服务端分页）。
+      注意合计/趋势/构成**永远**覆盖整个窗口，不受它影响；
+      这一条在 README 与界面上都写明了，否则「明细加起来 ≠ 合计」会被当成 bug。
+    """
+    if cutoff is None:
+        cutoff = source.data_cutoff(store_alias)
+    end_date = (window_end.isoformat() if window_end is not None
+                else _period_end(cutoff, today))
     start_date = (date.fromisoformat(end_date)
                   - timedelta(days=days - 1)).isoformat()
 
     limit = config.MAX_ORDERS_IN_RESPONSE if order_limit is None else order_limit
     rows = source.orders_for_period(store_alias, start_date, end_date)
-    # 汇总一律用整个窗口，orders 数组可以截断；截断只影响明细条数，不影响合计
-    detail_rows = rows if limit is None or limit < 0 else rows[:limit]
+    # 汇总一律用整个窗口，orders 数组可以分页；分页只影响明细条数，不影响合计
+    offset = max(0, int(order_offset or 0))
+    if limit is None or limit < 0:
+        detail_rows = rows[offset:]
+    else:
+        detail_rows = rows[offset:offset + limit]
 
     # ── 逐单走领域层 ──
     actuals = []           # evaluate_actual 的结果，顺序与 rows 一致
@@ -192,6 +214,172 @@ def build_dashboard(source: ProfitDataSource, store_alias: str, days: int,
         # 诊断信息刻意**不放进响应**（前端契约是定死的）。
         # unknown_reason 的分布通过日志暴露，见 app.py 的 access log。
     }
+
+
+def build_multi_store_summary(entries: Sequence[tuple], days: int,
+                              today: Optional[date] = None) -> dict:
+    """多店合计（ADR-0008）。
+
+    `entries` 是 `[(alias, display_name, source), ...]`，**数据源由调用方
+    （路由层）打开并负责关闭** —— 这里不碰 Runtime，也不做授权判断。
+
+    为什么合计必须在这里做、而不是前端把几个单店响应加起来：
+      1. 前端加总就是第二套口径（本项目的金额一律是字符串，就是为了禁止浮点加法）；
+      2. 完成率**不能**用各店完成率的平均 —— 那会按店等权，
+         两家店单量差 10 倍时明显失真。必须 Σ完整单数 / Σ总单数。
+      3. 跨店相加前必须先统一窗口，见下面的 `common_end`。
+
+    窗口：`common_end = min(各店 window_end)`。若某店给不出 window_end
+    （一单都没结算），就用其余店算，并在 warnings 里点名 —— 不假装它有数据。
+    """
+    per_store = []
+    window_ends = {}
+    for alias, display_name, source in entries:
+        cutoff = source.data_cutoff(alias)
+        window_ends[alias] = cutoff.window_end
+        per_store.append({
+            'alias': alias,
+            'display_name': display_name,
+            'source': source,
+            'cutoff': cutoff,
+        })
+
+    knowable = [w for w in window_ends.values() if w is not None]
+    common_end = min(knowable) if knowable else None
+
+    totals_sum = {'actual_profit_cny': Decimal('0'),
+                  'estimated_profit_cny': Decimal('0'),
+                  'complete_order_count': 0, 'total_order_count': 0}
+    has_actual = False
+    has_estimated = False
+    overdue_values = []
+    overdue_missing = []
+    trend_merged = {}
+    composition_merged = {key: [] for key, _ in COMPOSITION_KEYS}
+    breakdown = []
+
+    for item in per_store:
+        alias = item['alias']
+        payload = build_dashboard(
+            item['source'], alias, days, today=today,
+            order_limit=0, cutoff=item['cutoff'], window_end=common_end)
+        store_totals = payload['totals']
+
+        # 金额：字符串 → Decimal 相加，全程不经过浮点
+        if store_totals['actual_profit_cny'] is not None:
+            has_actual = True
+            totals_sum['actual_profit_cny'] += _dec(store_totals['actual_profit_cny'])
+        if store_totals['estimated_profit_cny'] is not None:
+            has_estimated = True
+            totals_sum['estimated_profit_cny'] += _dec(store_totals['estimated_profit_cny'])
+        totals_sum['complete_order_count'] += store_totals['complete_order_count']
+        totals_sum['total_order_count'] += store_totals['total_order_count']
+
+        overdue = store_totals['overdue_count']
+        if overdue is None:
+            overdue_missing.append(alias)
+        else:
+            overdue_values.append(int(overdue))
+
+        for point in payload['trend']:
+            bucket = trend_merged.setdefault(point['date'], {'a': [], 'e': []})
+            if point['actual_profit_cny'] is not None:
+                bucket['a'].append(_dec(point['actual_profit_cny']))
+            if point['estimated_profit_cny'] is not None:
+                bucket['e'].append(_dec(point['estimated_profit_cny']))
+
+        for cell in payload['composition']:
+            composition_merged[cell['key']].append(_dec(cell['value_cny']))
+
+        breakdown.append({
+            'alias': alias,
+            'display_name': item['display_name'],
+            'data_cutoff': payload['data_cutoff'],
+            'window_end': (None if window_ends[alias] is None
+                           else window_ends[alias].isoformat()),
+            'period': payload['period'],
+            #: 逐店合计是**在同一共同窗口下**算出来的，所以各店之和 == 顶层合计。
+            #: 这条等式由 api/tests/test_multi_store.py 把守。
+            'totals': store_totals,
+        })
+
+    end_date = common_end.isoformat() if common_end is not None else None
+    if end_date is None and per_store:
+        # 所有店都给不出已结算日：退回各店数据截止里最晚的那天（只是别下发空窗口）
+        latest = [it['cutoff'].cutoff for it in per_store if it['cutoff'].cutoff]
+        end_date = (max(latest).date().isoformat() if latest
+                    else (today or date.today()).isoformat())
+    start_date = (date.fromisoformat(end_date)
+                  - timedelta(days=days - 1)).isoformat()
+
+    cutoffs = [it['cutoff'].cutoff for it in per_store if it['cutoff'].cutoff]
+    overdue_count = sum(overdue_values) if not overdue_missing else None
+
+    totals = {
+        'actual_profit_cny': money(totals_sum['actual_profit_cny']) if has_actual else None,
+        'estimated_profit_cny': (money(totals_sum['estimated_profit_cny'])
+                                 if has_estimated else None),
+        # 完成率：Σ完整单数 / Σ总单数，走 core 里唯一定义的那一处除法
+        'completion_rate': format(completion_rate_from_counts(
+            totals_sum['complete_order_count'],
+            totals_sum['total_order_count']), 'f'),
+        'complete_order_count': totals_sum['complete_order_count'],
+        'total_order_count': totals_sum['total_order_count'],
+        'overdue_count': overdue_count,
+    }
+
+    trend = [{
+        'date': day,
+        'actual_profit_cny': (money(sum_amounts(trend_merged[day]['a']))
+                              if trend_merged[day]['a'] else None),
+        'estimated_profit_cny': (money(sum_amounts(trend_merged[day]['e']))
+                                 if trend_merged[day]['e'] else None),
+    } for day in sorted(trend_merged)]
+
+    composition = [{
+        'key': key, 'label': label,
+        # 与单店一致：一个数都没有时下发 null（不写 0.00）
+        'value_cny': (money(sum_amounts(composition_merged[key]))
+                      if composition_merged[key] else None),
+    } for key, label in COMPOSITION_KEYS]
+
+    return {
+        'store_aliases': [it['alias'] for it in per_store],
+        'stores': breakdown,
+        # 展示用的数据截止 = 各店最晚的一次写入；口径用的窗口右端 = 各店最早的那个
+        'data_cutoff': format_cutoff(max(cutoffs) if cutoffs else None),
+        'window_end': end_date,
+        'period': {'start': start_date, 'end': end_date, 'days': days},
+        'totals': totals,
+        'trend': trend,
+        'composition': composition,
+        'warnings': _aggregate_warnings(breakdown, window_ends, overdue_missing,
+                                        end_date),
+    }
+
+
+def _aggregate_warnings(breakdown: Sequence[dict], window_ends: dict,
+                        overdue_missing: Sequence[str], end_date: str) -> list:
+    """把「合计里少了什么」说清楚。合计最容易骗人的地方就是它不说话。"""
+    out = []
+    for item in breakdown:
+        alias = item['alias']
+        own = window_ends.get(alias)
+        if own is None:
+            out.append('%s 没有任何已锁定结算，它给不出窗口右端，也没有数据进合计。'
+                       % alias)
+            continue
+        if own.isoformat() != end_date:
+            out.append(
+                '%s 的最后结算日是 %s，晚于共同窗口右端 %s，'
+                '因此该店 %s ~ %s 的数据**不在本次合计里**。'
+                '要看到它们，请单独打开该店看板。'
+                % (alias, own.isoformat(), end_date,
+                   (own + timedelta(days=1)).isoformat(), own.isoformat()))
+    for alias in overdue_missing:
+        out.append('%s 给不出逾期单数（数据源不支持或没有扫描数据），'
+                   '合计里的逾期数因此为 null，而不是把它当成 0。' % alias)
+    return out
 
 
 def _overdue(source: ProfitDataSource, store_alias: str) -> Optional[int]:

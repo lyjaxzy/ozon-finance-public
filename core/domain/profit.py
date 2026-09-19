@@ -259,13 +259,25 @@ def evaluate_estimated(posting: Optional[Posting]) -> EstimatedProfit:
 
 
 # ── §7.3 核算完成率 ──────────────────────────────────────────────
+def completion_rate_from_counts(done: int, total: int) -> Decimal:
+    """完成率的**唯一定义**：完整核算订单数 / 总订单数。total 为 0 时返回 0。
+
+    为什么单独抽出来（ADR-0008）：多店合计时手上只有各店的
+    「完整单数 / 总单数」，没有逐个 ActualProfit 可传。
+    若在 API 里另写一次除法，就出现了第二处完成率定义 ——
+    两处一旦漂移（例如一处四舍五入、一处不），合计与单店就会对不上。
+    所以 `completion_rate()` 也改成调用本函数，全项目只有这一处除法。
+    """
+    if total <= 0:
+        return ZERO
+    return (Decimal(done) / Decimal(total)).quantize(
+        Decimal('0.0001'), rounding=ROUND_HALF_UP)
+
+
 def completion_rate(results: Sequence[ActualProfit]) -> Decimal:
     """核算完成率 = 完整核算订单数 / 总订单数。空集合返回 0。"""
-    if not results:
-        return ZERO
-    done = sum(1 for r in results if r.complete)
-    return (Decimal(done) / Decimal(len(results))).quantize(
-        Decimal('0.0001'), rounding=ROUND_HALF_UP)
+    return completion_rate_from_counts(
+        sum(1 for r in results if r.complete), len(results))
 
 
 def reason_histogram(results: Sequence[ActualProfit]) -> dict:

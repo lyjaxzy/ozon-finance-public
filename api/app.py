@@ -23,6 +23,7 @@ from .deps import Runtime, get_runtime
 from .routers import auth as auth_router
 from .routers import dashboard as dashboard_router
 from .routers import sku_detail as sku_detail_router
+from .routers import stores as stores_router
 from .schemas import HealthResponse
 
 logger = logging.getLogger('ozon.api')
@@ -38,6 +39,9 @@ app.include_router(dashboard_router.router)
 # 逐 SKU 利润下钻（ADR-0006）。单独一个路由文件，是因为它**不改**现有看板接口的
 # 响应形状 —— 前端依赖那个形状，加字段进去会一起坏。
 app.include_router(sku_detail_router.router)
+# 店铺列表（ADR-0008）。只读：只下发「用户可见的店铺 + 能不能打开 + 数据到哪天」，
+# 新增/下线店铺仍然改服务端 OZON_STORES 配置。
+app.include_router(stores_router.router)
 
 
 @app.exception_handler(Exception)

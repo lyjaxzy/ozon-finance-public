@@ -117,6 +117,73 @@ export interface ResHealth {
 }
 
 /* ──────────────────────────────────────────────────────────────────
+ * 店铺列表与多店合计（ADR-0008）
+ *
+ * 契约来源：
+ *   GET /api/stores                                  → 当前用户可见的店铺
+ *   GET /api/dashboard/aggregate?stores=a,b&days=14   → 多店合计
+ *
+ * ⚠️ 三条铁律：
+ *  1. **前端不做任何跨店累加**：金额是字符串，JS 的浮点加法会引入尾差；
+ *     合计一律取后端下发的字符串。
+ *  2. 合计的窗口右端是**各店里最早的那个已结算日**（共同窗口），
+ *     所以逐店的 `period` 与顶层 `period` 是同一个区间 —— 不能各算各的。
+ *  3. `overdue_count` 等字段为 `null` 表示**算不出来**，不许当成 0。
+ * ────────────────────────────────────────────────────────────────── */
+
+/** 一个店铺的可用性与最新数据时间 */
+export interface ResStoreInfo {
+  alias: string;
+  display_name: string;
+  /** 库能不能以只读方式打开；false 时看 `error` */
+  available: boolean;
+  /** available=false 时的原因（服务端配置故障要如实透出） */
+  error: string | null;
+  /** 最近一次写入时间（北京时间 ISO），只用于展示 */
+  data_cutoff: string | null;
+  /** 最后一个已结算日 YYYY-MM-DD；null 表示一单都没结算 */
+  window_end: string | null;
+}
+
+/** GET /api/stores */
+export interface ResStoreList {
+  stores: ResStoreInfo[];
+  total: number;
+  /** 允许的每页条数档位（后端唯一定义，前端不各写一份） */
+  page_size_options: number[];
+  max_aggregate_stores: number;
+  /** 「新增店铺该怎么做」的说明文案，直接展示给用户 */
+  config_hint: string;
+}
+
+/** 合计里的一家店（它自己的合计，窗口与顶层一致） */
+export interface ResAggregateStore {
+  alias: string;
+  display_name: string;
+  data_cutoff: string | null;
+  /** 该店自己的最后结算日；与顶层 window_end 不同时说明它拖后腿了 */
+  window_end: string | null;
+  period: ResPeriod;
+  totals: ResTotals;
+}
+
+/** GET /api/dashboard/aggregate?stores=a,b */
+export interface ResAggregate {
+  store_aliases: string[];
+  stores: ResAggregateStore[];
+  /** 各店最晚的一次写入（展示用） */
+  data_cutoff: string | null;
+  /** 共同窗口右端 = 各店已结算日里最早的那个（口径用） */
+  window_end: string | null;
+  period: ResPeriod;
+  totals: ResTotals;
+  trend: ResTrendPoint[];
+  composition: ResCompositionItem[];
+  /** 「合计里少了什么」的明文说明 —— 合计最会骗人的地方就是它不说话 */
+  warnings: string[];
+}
+
+/* ──────────────────────────────────────────────────────────────────
  * 逐 SKU 利润下钻（ADR-0006）
  *
  * 契约来源：`api/routers/sku_detail.py`

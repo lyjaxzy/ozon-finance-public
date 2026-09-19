@@ -121,9 +121,9 @@
           <el-radio-button value="actual">实际利润</el-radio-button>
         </el-radio-group>
         <span class="toolbar-tip">
-          合计为全窗口口径（不受搜索与排序影响）；表格最多下发
-          {{ data.totals.returned_count }} / {{ data.totals.matched_sku_count }} 个 SKU
-          <template v-if="data.totals.truncated">（已截断）</template>
+          合计为全窗口口径（不受搜索与排序影响）；本页
+          {{ data.totals.returned_count }} / 共 {{ data.totals.matched_sku_count }} 个 SKU
+          <template v-if="data.totals.truncated">（还有下一页）</template>
         </span>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </div>
@@ -207,6 +207,20 @@
           <el-empty :description="keyword ? '没有匹配的 SKU，换个关键词试试' : '所选区间没有 SKU 明细'" :image-size="96" />
         </template>
       </el-table>
+
+      <!-- 服务端分页：翻页只改下发的行，合计与对账数字始终是全窗口口径 -->
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :page-sizes="pageSizes"
+          :total="data.totals.matched_sku_count"
+          background
+          layout="total, sizes, prev, pager, next, jumper"
+          @current-change="load"
+          @size-change="onPageSizeChange"
+        />
+      </div>
     </template>
   </el-drawer>
 </template>
@@ -220,28 +234,35 @@ import { computed, ref, watch } from "vue";
 import { handleUnauthorized, type BackendError } from "@/api/backendRequest";
 import type { ResSkuDetail } from "@/api/interfaces/backend";
 import { getStoreSkuDetailApi, SKU_PROFIT_MODE_MAP, type SkuProfitMode } from "@/api/modules/dashboard";
-import { STORE_DISPLAY_NAMES } from "@/config/store";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "@/config/store";
+import { useStoreStore } from "@/stores/modules/store";
 
 /**
  * 逐 SKU 利润下钻抽屉。
  *
- * 设计要点（对应 ADR-0006）：
+ * 设计要点（对应 ADR-0006 / ADR-0008）：
  *  - **金额一律来自后端的字符串**，本组件不做任何加减；
  *  - `null` 一律渲染成明确的「缺成本 / 不可算」标记 + 原因 tooltip，**绝不显示成 0**；
  *  - 合计与对账数字都用后端下发的**全窗口口径**，它们不随搜索/排序/分页变化，
- *    所以「表里看到的行」和「上面的合计」对不上是正常的 —— 界面上写明这一点。
+ *    所以「表里看到的行」和「上面的合计」对不上是正常的 —— 界面上写明这一点；
+ *  - 分页是**服务端分页**（`limit` / `offset`），每页 10/20/50/100。
  */
 const props = defineProps<{
   modelValue: boolean;
   alias: string;
   days: number;
   mode: SkuProfitMode;
+  /** 每页档位；由看板页从后端 `/api/stores` 取，取不到就用本地兜底 */
+  pageSizes?: number[];
 }>();
 
 const emit = defineEmits<{
   (event: "update:modelValue", value: boolean): void;
   (event: "update:mode", value: SkuProfitMode): void;
 }>();
+
+const storeStore = useStoreStore();
+const pageSizes = computed(() => (props.pageSizes?.length ? props.pageSizes : [...PAGE_SIZE_OPTIONS]));
 
 const visible = computed({
   get: () => props.modelValue,
@@ -262,6 +283,15 @@ const error = ref<BackendError | null>(null);
 const keyword = ref("");
 const sortKey = ref("estimated_profit_cny");
 const sortDesc = ref(true);
+
+/** 服务端分页状态：页码从 1 开始，`offset = (page-1) * pageSize` */
+const page = ref(1);
+const pageSize = ref(DEFAULT_PAGE_SIZE);
+
+const onPageSizeChange = () => {
+  page.value = 1;
+  load();
+};
 
 /** 抽屉宽度：窄屏占满，宽屏留出看板的可见区域 */
 const drawerSize = computed(() => (window.innerWidth < 1200 ? "100%" : "78%"));
@@ -305,7 +335,8 @@ const costReasonText = (row: { unknown_reason: string | null; unknown_reason_lab
 
 const formatCutoff = (value: string | null | undefined) => (value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "--");
 
-const storeDisplayName = computed(() => STORE_DISPLAY_NAMES[props.alias] ?? props.alias);
+// 展示名来自后端下发的店铺列表（前端不再维护一份别名 → 店名 的映射）
+const storeDisplayName = computed(() => storeStore.displayName(props.alias));
 
 const periodText = computed(() => {
   const period = data.value?.period;
@@ -423,7 +454,9 @@ const load = async () => {
       sort: sortKey.value,
       desc: sortDesc.value,
       q: keyword.value.trim() || undefined,
-      limit: 500
+      // 服务端分页：只取当前页。合计/对账不受它影响（后端全窗口口径）
+      limit: pageSize.value,
+      offset: (page.value - 1) * pageSize.value
     });
   } catch (err) {
     const e = err as BackendError;
@@ -438,18 +471,25 @@ const load = async () => {
   }
 };
 
-/* 搜索防抖：不装 lodash，一个定时器足够 */
+/** 搜索防抖：不装 lodash，一个定时器足够 */
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 const onKeywordInput = (value: string) => {
   keyword.value = value ?? "";
   if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => load(), 400);
+  searchTimer = setTimeout(() => {
+    // 换了搜索词就必须回到第 1 页，否则可能停在一个不存在的页码上
+    page.value = 1;
+    load();
+  }, 400);
 };
 
 const onOpen = () => {
   keyword.value = "";
+  page.value = 1;
   sortKey.value = modeMeta.value.profitField;
   sortDesc.value = true;
+  // 抽屉标题里要显示店铺名：列表可能还没加载（比如直接刷新在抽屉打开状态）
+  if (!storeStore.loaded) storeStore.load();
   load();
 };
 
@@ -466,15 +506,32 @@ watch(
     if (!visible.value) return;
     sortKey.value = SKU_PROFIT_MODE_MAP[mode].profitField;
     sortDesc.value = true;
+    page.value = 1;
     load();
   }
 );
 
-/** 看板的统计天数变了，抽屉里的窗口必须跟着变 */
+/** 看板的统计天数变了，抽屉里的窗口必须跟着变（页码也要回到第 1 页） */
 watch(
   () => props.days,
   () => {
-    if (visible.value) load();
+    if (visible.value) {
+      page.value = 1;
+      load();
+    }
+  }
+);
+
+/** 换了店铺：搜索词、页码、排序都回到初始状态，不能把上一个店的条件带过来 */
+watch(
+  () => props.alias,
+  () => {
+    if (!visible.value) return;
+    keyword.value = "";
+    page.value = 1;
+    sortKey.value = modeMeta.value.profitField;
+    sortDesc.value = true;
+    load();
   }
 );
 </script>
@@ -708,5 +765,12 @@ watch(
 
 .profit-negative {
   color: var(--el-color-danger);
+}
+
+/* 分页条：与上方表格留一点间距，右对齐 */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

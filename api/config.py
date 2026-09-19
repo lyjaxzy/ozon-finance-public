@@ -28,9 +28,12 @@ STORES_RAW = os.environ.get(
         DEFAULT_STORE.replace('store_alpha', 'store_beta')))
 
 #: 别名 → 展示名。店铺元信息还没入库，先在这里维护。
+#: ⚠️ 2026-09-19 修正：store_beta 的库**确实存在**（7.3 MB / 45 单），
+#: 原来的「（占位，库不存在）」是错的，已去掉 —— 店铺管理页会把它显示给用户，
+#: 一句过期的说明比没有说明更糟。
 STORE_DISPLAY_NAMES = {
     'store_alpha': 'OZON 俄罗斯站 · 主力店',
-    'store_beta': 'OZON 俄罗斯站 · 二店（占位，库不存在）',
+    'store_beta': 'OZON 俄罗斯站 · 二店',
 }
 
 #: JWT 签发密钥。本机默认值 = 开发用，部署必须覆盖。
@@ -47,11 +50,18 @@ USERS_PATH = os.environ.get(
 DEFAULT_DAYS = 14
 MAX_DAYS = 365
 
-#: 响应里 orders 数组的最大条数。
-#: 响应结构是前端定死的，**不能**偷偷加分页字段（会破坏契约），
-#: 所以这里给一个上限，超出的部分只体现在 totals/trend 里，并在
-#: README 的「已知限制」里写明。
+#: 响应里 orders 数组的**每页**最大条数（`orders_limit` 的上限）。
+#: 响应结构本身没有被改动 —— 分页是通过两个**可选查询参数**
+#: `orders_offset` / `orders_limit` 实现的（ADR-0008），不传就是原来的行为。
+#: 合计与趋势永远覆盖整个窗口，分页只裁剪 orders 数组。
 MAX_ORDERS_IN_RESPONSE = int(os.environ.get('OZON_MAX_ORDERS', '200'))
+
+#: 分页可选页面大小（前端下拉里给的档位）。放在后端是为了让「允许哪些档位」
+#: 只有一个定义，前端从 /api/health 读，不各写一份。
+PAGE_SIZE_OPTIONS = (10, 20, 50, 100)
+
+#: 多店合计一次最多接受多少个店铺。防止有人拿一个 365 天 × 50 店的请求打垮服务。
+MAX_AGGREGATE_STORES = int(os.environ.get('OZON_MAX_AGGREGATE_STORES', '10'))
 
 #: 是否允许未登录访问。只读系统默认关闭，且不提供开着的入口。
 ALLOW_ANONYMOUS = os.environ.get('OZON_ALLOW_ANONYMOUS', '0') == '1'
