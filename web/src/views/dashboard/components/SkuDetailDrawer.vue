@@ -35,6 +35,8 @@
     </div>
 
     <template v-else-if="data">
+      <!-- 内容容器：只为了拿到 `.el-drawer__body`（翻页后滚回顶部），没有任何样式 -->
+      <div ref="contentRef">
       <!-- 口径摘要：缺成本 / 不完整 / 条数，一眼能看出这批数能不能直接用 -->
       <div class="summary-grid">
         <div v-for="item in summaryItems" :key="item.label" class="summary-item">
@@ -128,13 +130,31 @@
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </div>
 
-      <!-- 明细表：空态与加载态都要有 -->
+      <!-- 表格上方也放一个紧凑翻页条：进到抽屉就能立刻翻页，
+           不用先滚过 20 行（原先是两个 12px 图标箭头，被当成装饰） -->
+      <TablePager
+        compact
+        :page="page"
+        :page-count="pageCount"
+        :total="data.totals.matched_sku_count"
+        :page-size="pageSize"
+        :page-sizes="pageSizes"
+        :loading="loading"
+        unit="个 SKU"
+        size-unit="个"
+        @update:page="page = $event"
+        @change="onPageChange"
+      />
+
+      <!-- 明细表：空态与加载态都要有。限高内部滚动 —— 否则 100 条一页时
+           表格能到 4000px，翻页条会被顶到很远的地方 -->
       <el-table
         v-loading="loading"
         element-loading-text="正在取逐 SKU 明细…"
         :data="data.rows"
         stripe
         class="sku-table"
+        max-height="52vh"
         :default-sort="{ prop: sortProp, order: sortOrder }"
         @sort-change="onSortChange"
       >
@@ -208,18 +228,22 @@
         </template>
       </el-table>
 
-      <!-- 服务端分页：翻页只改下发的行，合计与对账数字始终是全窗口口径 -->
-      <div class="pager">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :page-sizes="pageSizes"
-          :total="data.totals.matched_sku_count"
-          background
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="load"
-          @size-change="onPageSizeChange"
-        />
+      <!-- 翻页条：与看板的订单明细共用同一个组件，行为不会两处漂移。
+           表格已限高内部滚动，所以它始终紧跟在表格后面。 -->
+      <TablePager
+        :page="page"
+        :page-count="pageCount"
+        :total="data.totals.matched_sku_count"
+        :page-size="pageSize"
+        :page-sizes="pageSizes"
+        :loading="loading"
+        unit="个 SKU"
+        size-unit="个"
+        @update:page="page = $event"
+        @update:page-size="pageSize = $event"
+        @change="onPageChange"
+        @size-change="onPageSizeChange"
+      />
       </div>
     </template>
   </el-drawer>
@@ -236,6 +260,8 @@ import type { ResSkuDetail } from "@/api/interfaces/backend";
 import { getStoreSkuDetailApi, SKU_PROFIT_MODE_MAP, type SkuProfitMode } from "@/api/modules/dashboard";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "@/config/store";
 import { useStoreStore } from "@/stores/modules/store";
+
+import TablePager from "./TablePager.vue";
 
 /**
  * 逐 SKU 利润下钻抽屉。
@@ -287,6 +313,30 @@ const sortDesc = ref(true);
 /** 服务端分页状态：页码从 1 开始，`offset = (page-1) * pageSize` */
 const page = ref(1);
 const pageSize = ref(DEFAULT_PAGE_SIZE);
+
+/** 总页数按**搜索结果**算（合计仍是全窗口口径，但翻页翻的是匹配到的 SKU） */
+const pageCount = computed(() => {
+  const total = data.value?.totals.matched_sku_count ?? 0;
+  return Math.max(1, Math.ceil(total / pageSize.value));
+});
+
+/** 内容容器的引用：翻页后把抽屉内容滚回顶部 */
+const contentRef = ref<HTMLElement | null>(null);
+
+/** 翻页后滚回顶部，否则用户停在表格底部看到的是新一页的最后几行，会以为没翻页 */
+const scrollToTop = () => {
+  const body = contentRef.value?.closest(".el-drawer__body");
+  if (body) body.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+/**
+ * 页码变化（`TablePager` 已把新页码写回 `page`）→ 只负责取数。
+ * ⚠️ 同看板：不要比较「目标页 === 当前页」，那时已被 v-model 更新，判断会永远成立。
+ */
+const onPageChange = async () => {
+  await load();
+  scrollToTop();
+};
 
 const onPageSizeChange = () => {
   page.value = 1;
@@ -765,12 +815,5 @@ watch(
 
 .profit-negative {
   color: var(--el-color-danger);
-}
-
-/* 分页条：与上方表格留一点间距，右对齐 */
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
 }
 </style>
