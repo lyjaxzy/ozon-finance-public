@@ -7,12 +7,13 @@
 import io
 import json
 import os
+from datetime import date
 from typing import Optional, Sequence
 
 from ..domain.profit import (Operation, Posting, SettlementSnapshot,
                              evaluate_estimated, sum_amounts, to_decimal)
 from .base import (DailyAmounts, DataCutoff, OverdueInfo, PeriodAmounts,
-                   PeriodOrderRow)
+                   PeriodOrderRow, SkuDetail)
 
 DEFAULT_FIXTURE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -117,18 +118,32 @@ class FixtureSource:
     # `fact.linked_operation_ids` 与 `operations[]` 都在，所以 §7.1 可以照常算。
     # 夹具里**没有**的是逾期扫描数据和逐单写入时间戳，那些明确抛 NotImplementedError。
     def data_cutoff(self, store_alias: str) -> DataCutoff:
-        """夹具没有全库写入时间，只能退回最后一条锁定快照的 locked_at。"""
+        """夹具没有全库写入时间，只能退回最后一条锁定快照的 locked_at。
+
+        `window_end` 另取**夹具里最大的 settlement_date** —— 与 sqlite 源同义：
+        窗口右端由数据自己给出，不由时间戳给出。夹具的 locked_at 集中在
+        2026-09-10，而最大结算日是 2026-09-08，两者差两天；用 locked_at
+        当窗口右端会凭空多出两个空日。
+        """
         stamps = []
+        days = []
         for o in self._data['orders']:
             s = o.get('settlement_snapshot') or {}
             dt = _parse_dt(s.get('locked_at'))
             if dt is not None:
                 stamps.append(dt)
-        if not stamps:
-            return DataCutoff(None, 'none', {})
-        best = max(stamps)
-        return DataCutoff(best, 'settlement_snapshot.locked_at',
-                          {'settlement_snapshot.locked_at': best.isoformat()})
+            day = s.get('settlement_date')
+            if day:
+                days.append(str(day)[:10])
+        best = max(stamps) if stamps else None
+        window_end = date.fromisoformat(max(days)) if days else None
+        detail = {'settlement_snapshot.locked_at': best.isoformat()} if best else {}
+        if window_end is not None:
+            detail['settlement_snapshot.settlement_date'] = window_end.isoformat()
+        if best is None:
+            # 没有 locked_at：截止时间显示不出来，但窗口右端仍然有效。
+            return DataCutoff(None, 'none', detail, window_end)
+        return DataCutoff(best, 'settlement_snapshot.locked_at', detail, window_end)
 
     def orders_for_period(self, store_alias: str, start_date: str, end_date: str,
                           limit=None, offset: int = 0) -> Sequence[PeriodOrderRow]:
@@ -207,6 +222,20 @@ class FixtureSource:
                          estimated_profit_cny=sum_amounts(v['e']) if v['e'] else None,
                          order_count=v['n'], complete_order_count=v['c'])
             for d, v in sorted(bucket.items()))
+
+    def sku_detail_for_period(self, store_alias: str, start_date: str,
+                              end_date: str) -> SkuDetail:
+        """夹具**没有冻结商品明细行**，所以无法按货号下钻 —— 明确抛错。
+
+        为什么宁可抛错也不返回空：`freeze_golden.py` 抽的是订单、快照、流水、
+        发货单四样，没有抽 `posting_items`（货号/SKU/数量）。
+        返回空列表会被调用方当成「这个窗口没有 SKU」，
+        那是**伪装成成功的错误**；抛错则会立刻暴露夹具缺了哪一块。
+        要支持夹具下钻，需要先扩展夹具 schema（见 ADR-0006 的「未解决」一节）。
+        """
+        raise NotImplementedError(
+            'FixtureSource 不提供逐 SKU 下钻：夹具未冻结 posting_items'
+            '（货号 / SKU / 商品名 / 数量）。请改用 SqliteSource / ExcelSource。')
 
     def overdue_count(self, store_alias: str) -> OverdueInfo:
         """夹具里没有逾期扫描数据 —— 明确抛错，不返回 0 冒充。

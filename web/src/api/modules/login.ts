@@ -1,62 +1,68 @@
-import type { Login, ResultData } from "@/api/interface";
+import type { ResLogin, ResMe } from "@/api/interfaces/backend";
+import type { Login } from "@/api/interface";
+import backend, { type BackendError } from "@/api/backendRequest";
 import authButtonList from "@/assets/json/authButtonList.json";
 import authMenuList from "@/assets/json/authMenuList.json";
 
 /**
- * @description 用户登录
+ * @description 用户登录 —— 真实后端 `POST /api/auth/login`
  *
- * ⚠️ 后端尚未就绪，此处为【本地离线 mock】：
- * 任意非空用户名 + 任意非空密码都会登录成功，并返回一个本地假 token。
- * 接后端时把 MOCK_LOGIN 置为 false，并恢复下方 http.post 调用即可。
+ * 后端刻意**没有**对请求体做任何包装，响应就是
+ * `{access_token, token_type, expires_in, user}`。
+ * 失败时返回 HTTP 401 + `{"detail": "用户名或口令错误"}`，
+ * 我们把它包成 BackendError 抛出去，由登录页原样展示 `detail`，**不吞掉**。
  *
- * @param params Login.ReqLoginForm
- * @returns Promise<ResultData<Login.ResLogin>>
+ * 口令按后端 `api/data/users.json` 里的 pbkdf2 校验，前端**不做任何哈希**：
+ * 后端认定的是明文口令本身（admin/admin 等），先 md5 反而永远登不上。
  */
-export const MOCK_LOGIN = true;
-
-/** 本地假 token（仅用于离线演示，不具备任何鉴权能力） */
-const createMockToken = () => {
-  const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `mock-token.${random}`;
-};
-
-export const loginApi = async (params: Login.ReqLoginForm): Promise<ResultData<Login.ResLogin>> => {
-  if (MOCK_LOGIN) {
-    // 模拟网络往返，让登录按钮的 loading 态可见
-    await new Promise(resolve => setTimeout(resolve, 300));
-    // 只做最基本的非空校验，密码不做任何比对（mock 阶段任意密码可登录）
-    if (!params.username || !params.password) {
-      throw new Error("请输入用户名和密码");
-    }
-    return { code: 200, msg: "登录成功（本地 mock）", data: { access_token: createMockToken() } };
-  }
-  // 后端就绪后启用下面这行（并删除上方 mock 分支）
-  // return http.post<Login.ResLogin>(PORT1 + `/login`, params, { loading: false });
-  throw new Error("登录接口尚未接入：请将 MOCK_LOGIN 置为 true，或补全 login.ts 中的真实请求");
+export const loginApi = async (params: { username: string; password: string }): Promise<ResLogin> => {
+  return backend.post<unknown, ResLogin>("/auth/login", params);
 };
 
 /**
- * @description 获取菜单列表（本地 JSON，已替换为我们的看板菜单）
- * @returns Promise<Menu.MenuOptions[]>
+ * @description 当前登录用户 + 可见店铺列表（`GET /api/auth/me`）
+ *
+ * `stores` 只含该用户**可见**的店铺，页面据此决定默认店铺，
+ * 避免运营账号（operator01）打开页面就往无权限的店铺上撞 403。
+ */
+export const getMeApi = async (): Promise<ResMe> => {
+  return backend.get<unknown, ResMe>("/auth/me");
+};
+
+/** 判断一个错误是不是后端返回的结构化错误 */
+export const isBackendError = (error: unknown): error is BackendError => {
+  return typeof error === "object" && error !== null && "message" in error && "isNetworkError" in error;
+};
+
+/**
+ * @description 获取菜单列表
+ *
+ * ⚠️ 仍是本地 JSON（`src/assets/json/authMenuList.json`）：后端只提供只读财务接口，
+ * **没有**菜单/按钮权限接口。菜单是前端的静态结构，不是本次「接真实 API」的范围。
+ *
+ * 返回体保持脚手架约定的 `{code, msg, data}` 包装形状，
+ * 这样 `stores/modules/auth.ts` 里现有的 `const { data } = await ...` 不用改。
  */
 export const getAuthMenuListApi = () => {
-  return authMenuList;
-  // 后端就绪后：return http.get<Menu.MenuOptions[]>(PORT1 + `/menu/list`, {}, { loading: false });
+  return { code: 200, msg: "ok", data: authMenuList.data as Menu.MenuOptions[] };
 };
 
 /**
- * @description 获取按钮权限（本地 JSON）
- * @returns Promise<Login.ResAuthButtons>
+ * @description 获取按钮权限
+ *
+ * ⚠️ 同菜单：仍是本地 JSON，后端没有对应接口。
+ * 真实的权限隔离在**服务端**做（跨店 403），前端隐藏入口不算隔离。
  */
 export const getAuthButtonListApi = () => {
-  return authButtonList;
-  // 后端就绪后：return http.get<Login.ResAuthButtons>(PORT1 + `/auth/buttons`, {}, { loading: false });
+  return { code: 200, msg: "ok", data: authButtonList.data as Login.ResAuthButtons };
 };
 
 /**
- * @description 用户退出登录（本地 mock，仅清空前端的 token）
+ * @description 用户退出登录
+ *
+ * 后端没有登出接口、也没有令牌吊销名单（api/README 8.1-2），
+ * 登出只能是前端清掉本地令牌，等令牌自然过期。
  */
-export const logoutApi = async (): Promise<ResultData<null>> => {
-  // 后端就绪后：return http.post(PORT1 + `/logout`);
-  return { code: 200, msg: "已退出登录（本地 mock）", data: null };
+export const logoutApi = async (): Promise<void> => {
+  return Promise.resolve();
 };

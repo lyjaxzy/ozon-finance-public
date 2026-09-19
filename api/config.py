@@ -55,3 +55,49 @@ MAX_ORDERS_IN_RESPONSE = int(os.environ.get('OZON_MAX_ORDERS', '200'))
 
 #: 是否允许未登录访问。只读系统默认关闭，且不提供开着的入口。
 ALLOW_ANONYMOUS = os.environ.get('OZON_ALLOW_ANONYMOUS', '0') == '1'
+
+# ── 数据源选择（ADR-0005 的落地开关）─────────────────────────────
+#
+# 看板的数据可以从两个地方来，由 `OZON_DATA_SOURCE` 切换：
+#
+#   sqlite（默认）—— 直接只读打开店铺库 `<DATA_ROOT>\data\stores\*.db`，
+#                   这是**最终形态**（ADR-0001 的「DB 可替换」）。
+#   excel         —— 从 OZON 后台导出的两份文件导入（应计报表 + postings.csv），
+#                   这是**过渡形态**，见 `docs/adr/0005-Excel导入数据源模板选择.md`。
+#
+# 为什么用环境变量而不是请求参数：数据源是**部署级**决定，不是每个请求能选的东西。
+# 让请求参数决定数据源，等于让调用方绕开一个已经核准过的取数路径。
+DATA_SOURCE = (os.environ.get('OZON_DATA_SOURCE') or 'sqlite').strip().lower()
+
+#: Excel 导入器的导出目录（应计报表 `Отчет по начислениям_*.xlsx` 与 `postings.csv` 放这里）
+EXCEL_EXPORT_DIR = os.environ.get('OZON_EXCEL_DIR', r'D:\Downloads')
+
+#: postings.csv 的显式路径。留空则取 `EXCEL_EXPORT_DIR\postings.csv`。
+EXCEL_POSTINGS_CSV = os.environ.get('OZON_EXCEL_POSTINGS') or None
+
+#: 采购成本文件（货号 → 单件采购成本 CNY）。支持 `.xlsx`（就是
+#: `采购成本模板.xlsx`：列 `货号` / `OZON 数字 SKU` / `单价` / `备注`）与 `.csv`。
+#:
+#: ⚠️ **为什么必须配**：两份导出里都**没有**采购成本。不配的话：
+#:   * §7.1 实际利润 → 判 `missing_purchase_cost`，合计为 null（正确，不误导）；
+#:   * §7.2 预估利润 → `evaluate_estimated` 按领域层定义把缺失项当 0 参与计算
+#:     （`core/domain/profit.py` 的既有约定），而 `api/dashboard.py` 只判
+#:     「有没有发货单」、不判 `complete`，于是合计会**退化成销售额**。
+#:     这个数字看着正常但是错的 —— 所以本文件一旦置空，
+#:     `api/deps.py` 会在装配时打一条 warning，把这件事说清楚。
+EXCEL_PURCHASE_COST_FILE = os.environ.get('OZON_EXCEL_PURCHASE_COST_FILE') or None
+
+#: 缺 postings.csv 时是否报错。默认报错 —— ADR-0005 要求每次导出两份；
+#: 置 0 则降级为「只有财务流水」，此时逾期单数不可用（返回 null 而不是 0）。
+EXCEL_REQUIRE_POSTINGS = os.environ.get('OZON_EXCEL_REQUIRE_POSTINGS', '1') == '1'
+
+#: 汇率来源。`none`（默认）表示**不推算** —— 应计报表里没有结算汇率，
+#: §7.1 会因此如实判 missing_exchange_rate，这是正确行为。
+#: `implied_buyer_payment` 用 `已由买家支付 / 发货的金额` 推，实测与生产库
+#: 结算汇率在 93.8% 的订单上完全相等，但 6.2% 会正好差一个整数倍。
+#: ⚠️ 这是临时方案，须业务确认后再开。
+EXCEL_EXCHANGE_RATE_MODE = os.environ.get('OZON_EXCEL_RATE_MODE', 'none').strip()
+
+#: 是否复用解析结果的磁盘缓存（按文件内容指纹放在系统临时目录）。
+#: 4 份应计报表冷解析约 35 秒，命中缓存重开约 0.01 秒。
+EXCEL_CACHE = os.environ.get('OZON_EXCEL_CACHE', '1') == '1'

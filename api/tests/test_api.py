@@ -17,7 +17,7 @@
 import calendar
 import os
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -475,6 +475,64 @@ class DashboardContractTest(ApiTestBase):
         self.assertEqual(a, c)
 
 
+class WindowEndSource(FakeSource):
+    """窗口右端（window_end）与写入时间故意错开的数据源。
+
+    模拟真实事故：财务同步停在 09-10（数据只到 09-10），但库里有更新的
+    写入时间戳。窗口必须结束在 09-10。
+    """
+
+    def data_cutoff(self, store_alias):
+        return DataCutoff(FAKE_CUTOFF, 'fake.updated_at', {},
+                          date(2026, 9, 10))
+
+
+class PeriodEndTest(unittest.TestCase):
+    """`_period_end` 的三级优先：窗口右端 → 写入时间 → 系统当天。
+
+    这一段是**纯函数**测试，不碰数据库也不碰 FastAPI —— 事故的根因就在
+    这三行的取值顺序上，所以它值得被单独钉住。
+    """
+
+    def setUp(self):
+        from api.dashboard import _period_end
+        self.period_end = _period_end
+        self.today = date(2026, 1, 1)
+
+    def test_window_end_wins_over_write_time(self):
+        c = DataCutoff(datetime(2026, 9, 30, 12, 0), 'x', {}, date(2026, 9, 10))
+        self.assertEqual('2026-09-10', self.period_end(c, self.today))
+
+    def test_falls_back_to_write_time(self):
+        """数据源给不出结算日（夹具 / 测试替身）时，行为与拆分之前逐字相同。"""
+        c = DataCutoff(datetime(2026, 9, 10, 12, 0), 'x', {}, None)
+        self.assertEqual('2026-09-10', self.period_end(c, self.today))
+
+    def test_falls_back_to_today(self):
+        self.assertEqual('2026-01-01',
+                         self.period_end(DataCutoff(None, 'none', {}, None),
+                                         self.today))
+        self.assertEqual('2026-01-01', self.period_end(None, self.today))
+
+    def test_dashboard_period_follows_window_end_not_write_time(self):
+        """端到端接线：看板窗口真的用了 window_end，而不是只改了个函数。"""
+        client, restore = make_client(
+            source_factory=lambda store: WindowEndSource())
+        self.addCleanup(restore)
+        token = client.post('/api/auth/login',
+                            json={'username': 'admin',
+                                  'password': MOCK_PASSWORDS['admin']}
+                            ).json()['access_token']
+        body = client.get('/api/dashboard/store/store_alpha?days=14',
+                          headers={'Authorization': 'Bearer %s' % token}).json()
+        self.assertEqual('2026-09-10', body['period']['end'])
+        self.assertEqual('2026-08-28', body['period']['start'])
+        # 「数据截止」仍然显示写入时间：两个边界是两件事，不能互相顶替
+        self.assertEqual('2026-09-18T17:54:00+08:00', body['data_cutoff'])
+        # 夹具里的单在 09-17/09-18，落在窗口外 —— 窗口跟着 window_end 走
+        self.assertEqual(0, body['totals']['total_order_count'])
+
+
 # ── 口径一致性：与 core.domain.profit 直算逐单比对 ────────────────
 class CanonicalFormulaTest(ApiTestBase):
     """证明 API 的每个订单金额就是 evaluate_actual 的结果，而不是另算的一套。"""
@@ -596,12 +654,48 @@ class RealDatabaseConsistencyTest(unittest.TestCase):
                            '14 天窗口的真实订单数不可能这么少 —— 疑似没连上生产库')
         self.assertGreater(Decimal(totals['actual_profit_cny']), Decimal('0'))
         self.assertIsInstance(totals['overdue_count'], int)
-        self.assertEqual(14, len(body['trend']))
         self.assertEqual(14, body['period']['days'])
         # 库里的时间戳是 UTC；下发的截止时间必须是北京时间带 +08:00
         self.assertTrue(body['data_cutoff'].endswith('+08:00'),
                         'data_cutoff 未转成北京时间: %s' % body['data_cutoff'])
         self.assertRegex(body['data_cutoff'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}')
+
+        # ── 窗口右端必须在数据上，不能在写入时间上 ──
+        # 这条断言直接编码了踩过的那个坑：财务同步停在 09-10，逾期扫描在
+        # 09-19 跑过，窗口右端被写成 09-19，于是 days=7 返回 0 单。
+        # 原先这里写的是 `assertEqual(14, len(trend))` —— 它靠的是
+        # 「真实库里恰好每天都结算过」这个数据巧合，库一变就误报。
+        # 「窗口最后一天有数据」则是**构造上必然成立**的：右端就是最后一个
+        # 已结算日，那天至少有一张锁定快照。
+        trend = body['trend']
+        self.assertGreater(len(trend), 0, '窗口里一天数据都没有 —— 窗口右端取错了')
+        self.assertLessEqual(len(trend), 14)
+        dates = [p['date'] for p in trend]
+        self.assertEqual(sorted(dates), dates, '趋势必须按日期升序')
+        self.assertEqual(len(set(dates)), len(dates), '同一天不能出现两个桶')
+        for d in dates:
+            self.assertLessEqual(body['period']['start'], d)
+            self.assertLessEqual(d, body['period']['end'])
+        self.assertEqual(body['period']['end'], dates[-1],
+                         '窗口最后一天没有数据 —— 右端越过了最后一个结算日'
+                         '（data_cutoff.window_end 可能被写成了别的表的时间）')
+
+    def test_period_is_suffix_of_longer_window(self):
+        """同日截止的短窗口必须是长窗口的后缀 —— 右端只有一个。
+
+        右端若跟着「哪天写库」漂移，同一天两次请求就会给出不同的截止日，
+        短窗口也就不是长窗口的后缀了。这里顺带回答了「days 参数被忽略了吗」。
+        """
+        small = self.live_body(days=7)
+        large = self.live_body(days=14)
+        self.assertEqual(large['period']['end'], small['period']['end'],
+                         '两次请求的窗口右端必须是同一个数据截止日')
+        # 左端 = 右端 − (days − 1)，逐字复核（不写死具体日期：库会往前走）
+        for body, days in ((small, 7), (large, 14)):
+            want = (date.fromisoformat(body['period']['end'])
+                    - timedelta(days=days - 1)).isoformat()
+            self.assertEqual(want, body['period']['start'])
+        self.assertLess(large['period']['start'], small['period']['start'])
 
     def test_each_api_order_matches_evaluate_actual_on_real_db(self):
         """核心断言：真实库上，API 的订单金额与 evaluate_actual 直算**逐个相同**。
@@ -684,8 +778,18 @@ class RealDatabaseConsistencyTest(unittest.TestCase):
 
     def test_period_totals_change_with_days(self):
         """窗口变长，合计必须跟着变 —— 防止 days 参数被忽略（写死缓存之类）。"""
-        small = Decimal(self.live_body(days=7)['totals']['actual_profit_cny'])
-        large = Decimal(self.live_body(days=14)['totals']['actual_profit_cny'])
+        small_body = self.live_body(days=7)
+        large_body = self.live_body(days=14)
+        # 先证明两边都真的算出了数：原先这里直接 Decimal(...)，一旦窗口为空
+        # （右端取错时就是这样）报的是 TypeError，看起来像测试坏了而不是口径坏了。
+        for body, days in ((small_body, 7), (large_body, 14)):
+            self.assertIsNotNone(body['totals']['actual_profit_cny'],
+                                 '%d 天窗口的实际利润是 null —— 窗口里没有可核算的订单' % days)
+        small = Decimal(small_body['totals']['actual_profit_cny'])
+        large = Decimal(large_body['totals']['actual_profit_cny'])
+        self.assertGreater(large_body['totals']['total_order_count'],
+                           small_body['totals']['total_order_count'],
+                           '14 天窗口的订单数应当多于 7 天 —— 否则就是有几天没数据')
         self.assertNotEqual(small, large)
         self.assertLess(small, large)
 

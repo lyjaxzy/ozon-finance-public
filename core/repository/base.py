@@ -17,7 +17,7 @@
 凡是「实际利润 / 预估利润 / 完成率」都必须在 core/domain/profit.py 里算。
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, Protocol, Sequence
 
@@ -82,11 +82,108 @@ class OverdueInfo:
 
 @dataclass(frozen=True)
 class DataCutoff:
-    """数据截止时间：库里最后一个可观测的写入时间。"""
+    """数据源的两个时间边界。它们**不是一回事**，混用会算出空窗口。
+
+    * `cutoff` —— 库里最后一个可观测的写入时间。**只用于展示**（看板顶部
+      「数据截止」）与兜底。它回答的是「这份数据是什么时候同步进来的」。
+    * `window_end` —— 看板时间窗的**右端**，必须由「窗口查询真的能取到数」
+      的那张表给出，也就是最后一个**已结算**的日期。它回答的是
+      「窗口排到哪天为止，最后一天还有数据」。
+
+    为什么要拆开：写入时间来自同步动作，而同步动作与财务数据的新鲜度
+    可以完全脱钩。真实踩到的例子 —— 财务同步停在 2026-09-10，而运营的
+    逾期扫描在 2026-09-19 跑过一次，若把扫描时间当成窗口右端，
+    `days=7` 的窗口（09-13 ~ 09-19）里**一天财务数据都没有**，
+    看板显示「0 单 / 实际利润为空」。那不是数据缺失，是窗口取错了。
+
+    `window_end is None` 表示该数据源给不出这个边界（夹具 / 测试替身），
+    调用方退回 `cutoff.date()`，行为与拆分之前逐字相同。
+    """
 
     cutoff: Optional[datetime] = None
     source: str = 'unknown'
     candidates: dict = field(default_factory=dict)
+    window_end: Optional[date] = None
+
+
+# ── 逐 SKU 下钻的输出结构（ADR-0006）─────────────────────────────
+#
+# 为什么这些结构在 repository 层而不是 API 层：
+# 「把订单的金额落到哪个货号上」是**取数与分组**问题（分组键来自数据本身），
+# 不是利润口径问题。放进 API 就又变成「Web 层自建一套模型」。
+# 但**利润本身**一律不在这里算：这里只给出归属后的原始数。
+@dataclass(frozen=True)
+class PeriodSkuRow:
+    """窗口内「一个订单 × 一个货号」的明细行 —— 逐 SKU 下钻的取数单位。
+
+    每一行带的金额都是**它自己名下**的：一个订单只有一个货号时整单归属到该行
+    （不需要、也不允许分摊）；多个货号时按数据自带的按行金额/单件成本落位，
+    落不下去的行留空并写明原因。
+
+    §7.1 的三个输入（snapshot / operations / expected_operation_ids）
+    只有整单归属到这一行时才有值 —— 多货号订单的流水无法按货号归属，
+    此时 `actual_attributable=False`，原因在 `actual_unknown_reason`。
+    """
+
+    posting_number: str
+    settlement_date: Optional[str]
+    offer_id: str
+    sku: Optional[str] = None
+    product_name: Optional[str] = None
+    quantity: int = 0
+    revenue_cny: Optional[Decimal] = None
+    purchase_cost_cny: Optional[Decimal] = None
+    logistics_cost_cny: Optional[Decimal] = None
+    platform_fee_cny: Optional[Decimal] = None
+    #: 归属依据：single_item（整单归属）/ per_line（按行金额归属）
+    attribution: str = 'single_item'
+    snapshot: Optional[SettlementSnapshot] = None
+    operations: Sequence[Operation] = ()
+    expected_operation_ids: Sequence[str] = ()
+    actual_attributable: bool = True
+    actual_unknown_reason: Optional[str] = None
+    revenue_unknown_reason: Optional[str] = None
+    cost_unknown_reason: Optional[str] = None
+    logistics_unknown_reason: Optional[str] = None
+    platform_fee_unknown_reason: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UnattributedRecord:
+    """一笔**无法归属到任何货号**的金额，以及原因。
+
+    存在的理由与 `core/README.md` 里「3 行 ID начисления 为空」的处理一致：
+    一行都不静默丢弃。这些金额会以「未归属」区块如实下发，
+    于是「逐 SKU 合计 + 未归属 = 订单口径合计」是一条可检验的等式。
+    """
+
+    field: str
+    reason: str
+    amount: Optional[Decimal] = None
+    posting_number: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UnattributedAmounts:
+    """窗口内无法归属到货号的金额汇总（按字段）。
+
+    `records` 里**一行都不丢弃**：归不出去的每一笔都带着原因和来源单号，
+    调用方可以据此汇总、分组或直接展示。
+    """
+
+    posting_count: int = 0
+    records: Sequence[UnattributedRecord] = ()
+
+
+@dataclass(frozen=True)
+class SkuDetail:
+    """逐 SKU 下钻的取数结果。**不含任何利润口径。**"""
+
+    rows: Sequence[PeriodSkuRow] = ()
+    unattributed: UnattributedAmounts = UnattributedAmounts()
+    #: 实际利润整单都无法归属的订单（多货号订单）—— 交给调用方走 evaluate_actual
+    actual_unattributed: Sequence[PeriodOrderRow] = ()
+    order_count: int = 0
 
 
 class ProfitDataSource(Protocol):
@@ -145,7 +242,13 @@ class ProfitDataSource(Protocol):
     #     不属于任何窗口 —— 它还没结算，既不该进实际利润，也不该进预估利润。
     #   * 日期一律按 `YYYY-MM-DD` 字符串比较（与库中存储格式一致）。
     def data_cutoff(self, store_alias: str) -> DataCutoff:
-        """本数据源最后一个可观测的写入时间，用作看板的数据截止时间。"""
+        """返回本数据源的时间边界（见 `DataCutoff`）。
+
+        `cutoff` 是最后一个可观测的写入时间；`window_end` 是**窗口右端**，
+        取自最后一个已结算的日期。实现不得用运营类表（逾期扫描等）的时间
+        去决定 `window_end` —— 那会让窗口右端越过财务数据，
+        直接后果是短窗口返回空数据。
+        """
         ...
 
     def orders_for_period(self, store_alias: str, start_date: str, end_date: str,
@@ -180,6 +283,24 @@ class ProfitDataSource(Protocol):
                       end_date: str) -> Sequence[DailyAmounts]:
         """按天汇总的廉价路径。**只返回有数据的日期**，不补零日期行 ——
         「当天没数据」和「当天利润为 0」是两件事。"""
+        ...
+
+    def sku_detail_for_period(self, store_alias: str, start_date: str,
+                              end_date: str) -> SkuDetail:
+        """窗口内**逐 SKU**（按货号）的取数结果 —— 看板下钻用。
+
+        分组键必须来自**数据本身**：应计报表的 `Артикул` / `SKU`、以及
+        `postings.csv`（库里是 `posting_items`）的 `货号` / `SKU` / `数量`。
+        **严禁按比例分摊**：一笔金额归不到某个货号时，必须留在
+        `SkuDetail.unattributed` 里并写明原因，绝不允许摊到各 SKU 头上，
+        也绝不允许用 0 顶替（详见 docs/adr/0006-逐SKU利润下钻.md）。
+
+        时间窗口的口径与 `orders_for_period` **完全相同**（按锁定快照的
+        `settlement_date`），否则「逐 SKU 合计」与「订单口径合计」会对不上。
+
+        本方法**不得包含任何利润口径**：它只做「按分组键取数与归属」，
+        §7.1/§7.2 一律由调用方交给 core/domain/profit.py 计算。
+        """
         ...
 
     def overdue_count(self, store_alias: str) -> OverdueInfo:

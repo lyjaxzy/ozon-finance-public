@@ -19,12 +19,19 @@
 显式 Runtime 只有一处定义，测试替换 `app.state.runtime` 即可，
 生产路径与测试路径走的是同一条代码。
 """
+import csv
+import io
+import logging
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Iterator, List, Optional
+from decimal import Decimal, InvalidOperation
+from typing import Callable, Dict, Iterator, List, Optional
 
 from fastapi import HTTPException, Request
 
+from core.repository.base import ProfitDataSource
+from core.repository.excel_source import ExcelSource
 from core.repository.sqlite_source import SqliteSource
 
 from . import config
@@ -32,12 +39,14 @@ from .stores import Store, StoreRegistry
 from .tokens import TokenError, decode_access_token
 from .users import User, UserStore
 
+logger = logging.getLogger('ozon.api')
+
 
 @dataclass
 class Runtime:
     """应用的可替换件集合。生产用 make_default_runtime()，测试自己造一个。"""
 
-    source_factory: Callable[[Store], SqliteSource]
+    source_factory: Callable[[Store], ProfitDataSource]
     user_store: UserStore
     registry: StoreRegistry
 
@@ -57,10 +66,11 @@ class Runtime:
 
     # ── 数据源 ──
     @contextmanager
-    def open_source(self, store: Store) -> Iterator[SqliteSource]:
+    def open_source(self, store: Store) -> Iterator[ProfitDataSource]:
         """取只读数据源，用完关掉。
 
-        只读连接关不关都不影响库内容，但不关会在并发压测下耗尽文件句柄。
+        SqliteSource 关的是只读连接，ExcelSource 关的是解析结果库 ——
+        两者不关都会在并发压测下耗尽文件句柄。
         """
         src = self.source_factory(store)
         try:
@@ -72,13 +82,139 @@ class Runtime:
                 pass
 
 
-def _default_source_factory(store: Store) -> SqliteSource:
-    """按注册表的路径只读打开店铺库。
+def _default_source_factory(store: Store) -> ProfitDataSource:
+    """按 `OZON_DATA_SOURCE` 选数据源实现（ADR-0005 的开关）。
 
-    `verify_readonly=True` 时 SqliteSource 会做一次「能不能写」的自检；
-    保留它的默认行为 —— 万一哪天有人把 mode=ro 改掉，这里会当场炸。
+    * `sqlite`（默认）—— 只读打开店铺库。`SqliteSource` 构造时会做一次
+      「能不能写」的自检，万一哪天有人把 mode=ro 改掉，这里会当场炸。
+    * `excel` —— 从 OZON 后台导出的两份文件导入。源文件全程只读，
+      解析结果落系统临时目录的 SQLite 并以 `mode=ro` 打开。
+
+    取值非法时**直接报错**而不是悄悄退回 sqlite：数据源选错会让看板拿另一套口径
+    出数，那种错误必须当场暴露。
     """
-    return SqliteSource(store.db_path, alias=store.alias)
+    mode = config.DATA_SOURCE
+    if mode == 'excel':
+        return _make_excel_source(store)
+    if mode == 'sqlite':
+        return SqliteSource(store.db_path, alias=store.alias)
+    raise RuntimeError(
+        'OZON_DATA_SOURCE 只支持 sqlite / excel，收到 %r。'
+        '（excel 模式下店铺注册表里的 db_path 不参与取数，'
+        '导出目录由 OZON_EXCEL_DIR 指定。）' % (mode,))
+
+
+def _make_excel_source(store: Store) -> ExcelSource:
+    """装配 Excel 导入器，并把「少了什么会算错」在装配时就喊出来。"""
+    costs = _load_purchase_costs(config.EXCEL_PURCHASE_COST_FILE)
+    if not costs:
+        logger.warning(
+            'OZON_DATA_SOURCE=excel 但没有采购成本（OZON_EXCEL_PURCHASE_COST_FILE 未配置）。'
+            '后果：§7.1 实际利润会全部判 missing_purchase_cost（合计 null，正确），'
+            '但看板的 §7.2 预估利润会退化成销售额 —— 因为应计报表与 postings.csv 里'
+            '都没有采购成本这个字段。请配置采购成本文件后再用于生产。')
+    if config.EXCEL_EXCHANGE_RATE_MODE == 'implied_buyer_payment':
+        logger.warning(
+            'OZON_EXCEL_RATE_MODE=implied_buyer_payment：汇率由 '
+            '«已由买家支付 / 发货的金额» 推算。实测与生产库结算汇率在 93.8% 的订单上'
+            '完全相等，但 6.2% 会正好差一个整数倍（多商品单买家实付不全）。'
+            '属临时方案，须业务确认。')
+    return ExcelSource(
+        accrual_dir=config.EXCEL_EXPORT_DIR,
+        postings_csv=config.EXCEL_POSTINGS_CSV,
+        alias=store.alias,
+        require_postings=config.EXCEL_REQUIRE_POSTINGS,
+        exchange_rate_mode=config.EXCEL_EXCHANGE_RATE_MODE,
+        purchase_cost_by_offer=costs or None,
+        cache=config.EXCEL_CACHE,
+    )
+
+
+# ── 采购成本文件（货号 → 单件成本 CNY）───────────────────────────
+#
+# 为什么放在 API 层而不是 core：这是**部署配置**，不是财务口径。
+# core 只提供 `purchase_cost_by_offer` 这个注入口，成本从哪来由装配方决定
+# （将来接了采购成本表，就是从库里来，而不是从文件来）。
+_OFFER_COLUMNS = ('货号', 'offer_id', 'Offer ID', 'offer id')
+_COST_COLUMNS = ('单价', '采购成本', '采购单价', '成本', '单价(CNY)', 'cost')
+
+
+def _load_purchase_costs(path: Optional[str]) -> Dict[str, Decimal]:
+    """读「货号 → 单件采购成本」。支持 `.xlsx` 与 `.csv`；未配置时返回空。
+
+    文件读不了就**当场报错**，不静默降级 —— 少了成本会让看板的预估利润
+    悄悄变成销售额，那正是本项目最反对的「伪装成成功的错误」。
+    """
+    if not path:
+        return {}
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            '找不到采购成本文件：%s\n'
+            '它由 OZON_EXCEL_PURCHASE_COST_FILE 指定，用来补上两份导出里都没有的采购成本。'
+            '（列名形如 `货号` / `单价`，可直接用采购成本模板导出。）' % path)
+    rows = _read_table_rows(path)
+    header_index, offer_i, cost_i = None, None, None
+    for i, row in enumerate(rows[:10]):
+        cells = [(c or '').strip() for c in row]
+        o = _index_of(cells, _OFFER_COLUMNS)
+        c = _index_of(cells, _COST_COLUMNS)
+        if o is not None and c is not None:
+            header_index, offer_i, cost_i = i, o, c
+            break
+    if header_index is None:
+        raise FileNotFoundError(
+            '采购成本文件读不出表头：%s\n'
+            '需要一列「货号」和一列「单价」（列名可用：%s / %s）。'
+            % (path, '、'.join(_OFFER_COLUMNS), '、'.join(_COST_COLUMNS)))
+
+    costs: Dict[str, Decimal] = {}
+    bad = 0
+    for row in rows[header_index + 1:]:
+        if offer_i >= len(row):
+            continue
+        offer = (row[offer_i] or '').strip()
+        if not offer:
+            continue
+        raw = (row[cost_i] or '').strip() if cost_i < len(row) else ''
+        try:
+            value = Decimal(raw.replace(',', ''))
+        except (InvalidOperation, ValueError):
+            bad += 1
+            continue
+        costs[offer] = value
+    if bad:
+        logger.warning('采购成本文件有 %d 行的「单价」解析不了，已跳过：%s', bad, path)
+    logger.info('采购成本已载入 %d 个货号：%s', len(costs), path)
+    return costs
+
+
+def _index_of(cells, names):
+    lowered = [c.lower() for c in cells]
+    for name in names:
+        if name.lower() in lowered:
+            return lowered.index(name.lower())
+    return None
+
+
+def _read_table_rows(path: str):
+    """把 xlsx / csv 读成「行 × 列」的字符串表格。"""
+    if path.lower().endswith('.csv'):
+        with io.open(path, encoding='utf-8-sig', newline='') as fh:
+            sample = fh.readline()
+            fh.seek(0)
+            delim = ';' if sample.count(';') > sample.count(',') else ','
+            return [[c for c in row] for row in csv.reader(fh, delimiter=delim)]
+    try:
+        import openpyxl
+    except ImportError as exc:  # pragma: no cover - 取决于环境
+        raise FileNotFoundError('读 .xlsx 采购成本需要 openpyxl：%s' % exc)
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        ws = wb[wb.sheetnames[0]]
+        return [[None if v is None else str(v) for v in row]
+                for row in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
 
 
 def make_default_runtime() -> Runtime:
