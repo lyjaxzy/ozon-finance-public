@@ -134,3 +134,19 @@ COST_SOURCE_POLICY = (os.environ.get('OZON_COST_POLICY') or 'book_first').strip(
 
 #: 成本台账一次下发多少行（分页上限）
 MAX_COST_ROWS_IN_RESPONSE = int(os.environ.get('OZON_MAX_COST_ROWS', '100'))
+
+# ── 对外暴露（公网 URL）──────────────────────────────────────────
+#
+# 默认配置是**为「只在本机自己用」设计的**：账号口令等于用户名、JWT 密钥有仓库里的
+# 默认值、用户表就是仓库里的 api/data/users.json。
+# 一旦要挂到公网，先设 `OZON_PUBLIC_MODE=1` —— 它会让 `api/preflight.py` 做
+# fail-closed 自检：**不满足条件就拒绝启动**（而不是打印警告后照常服务）。
+PUBLIC_MODE = os.environ.get('OZON_PUBLIC_MODE', '0').strip() in ('1', 'true', 'yes')
+
+#: 前端生产构建产物（`pnpm build:pro` 的输出）。对外服务由 FastAPI 直接挂载它，
+#: **同源**提供页面与 /api：不需要 CORS，也不需要对外暴露 Vite 开发服务器
+#: （开发服务器会暴露源码，并有任意文件读取的历史问题）。
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIST = os.environ.get(
+    'OZON_FRONTEND_DIST', os.path.join(REPO_ROOT, 'web', 'dist'))
+FRONTEND_INDEX = os.path.join(FRONTEND_DIST, 'index.html')
