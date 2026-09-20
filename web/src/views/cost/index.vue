@@ -918,7 +918,7 @@ const errorDesc = computed(() => {
   const message = loadError.value?.message ?? "未知错误";
   const status = loadError.value?.status;
   if (status === 503) {
-    return `${message}。成本库路径由服务端 OZON_COST_BOOK 配置决定（当前后端用的是 C:\\ProgramData\\OzonFinancePlatform\\cost_book.db），前端不能指定路径。`;
+    return `${message}。成本库路径由服务端 OZON_COST_BOOK 配置决定（当前后端用的是 <DATA_ROOT>Platform\\cost_book.db），前端不能指定路径。`;
   }
   if (status === 403) {
     return `${message}。成本台账对所有已登录账号可读 —— 这里出现 403 说明服务端授权配置有问题。`;
@@ -1130,7 +1130,7 @@ const onMigrateLegacy = async () => {
   try {
     await ElMessageBox.confirm(
       [
-        "把原产品成本库（C:\\ProgramData\\OzonFinance\\data\\desktop\\purchase_costs.db）里的成本搬到我们的成本库（C:\\ProgramData\\OzonFinancePlatform\\cost_book.db）。",
+        "把原产品成本库（<DATA_ROOT>\\data\\desktop\\purchase_costs.db）里的成本搬到我们的成本库（<DATA_ROOT>Platform\\cost_book.db）。",
         "· 幂等：可以重复点，第二次的结果全是「未变」；",
         "· 旧库只读打开、迁移是复制 —— 不会修改原产品的任何文件；",
         "· 货号为空的旧记录无法归属，会被跳过并逐条给出原因（实测 71 行）。"

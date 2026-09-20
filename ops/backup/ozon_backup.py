@@ -4,7 +4,7 @@
 
 为什么需要它
 ------------
-`C:\\ProgramData\\OzonFinance` 里的店铺库是唯一的真实业务资产。
+`<DATA_ROOT>` 里的店铺库是唯一的真实业务资产。
 它原先只有一份 **2026-09-07 的手工快照**,而且：
   * 陈旧（缺约 1,983 条流水）
   * 与数据同盘同根（`backups/` 就在数据根里，被连锅端）
@@ -148,8 +148,8 @@ def collect_sources():
     """列出待备份文件，返回 [(绝对路径, 快照内的相对键)]。
 
     两个根一起收：
-      * 旧产品的 `C:\\ProgramData\\OzonFinance`（只读，键是它下面的相对路径）；
-      * 我们自己的 `C:\\ProgramData\\OzonFinancePlatform`（ADR-0009，键加 `platform/` 前缀）。
+      * 旧产品的 `<DATA_ROOT>`（只读，键是它下面的相对路径）；
+      * 我们自己的 `<DATA_ROOT>Platform`（ADR-0009，键加 `platform/` 前缀）。
     成本台账在我们自己的根里，**漏掉它 = 人工录入的成本没有备份**。
     """
     found = []

@@ -13,7 +13,7 @@
    这是 ADR-0009 §五的核心承诺 —— 成本库是我们唯一允许写的库。
 
 **测试必须用临时成本库**：`Runtime.cost_book_path` 指向 `tempfile` 下的路径，
-绝不能碰 `C:\\ProgramData\\OzonFinancePlatform\\cost_book.db`（那是生产台账）。
+绝不能碰 `<DATA_ROOT>Platform\\cost_book.db`（那是生产台账）。
 本文件每个用例一个临时目录，退出即删。
 
 跑法：

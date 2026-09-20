@@ -17,6 +17,7 @@
     "core/tests/test_cost_book.py",
     "docs/adr/*.md",
     "ops/backup/*",
+    "ops/public/*",
     "ops/publish/*",
     "06-Web重构/**",
     "api/**",
@@ -30,10 +31,10 @@
     "06-Web重构/backend/ozon_dashboard.db",
     "06-Web重构/backend/**/__pycache__/**"
   ],
-  "_sanitize_comment": "字面替换：把私密信息换成占位符或虚构值。正则替换（订单号→FAKE-xxx）见 build 脚本。",
+  "_sanitize_comment": "字面替换：把私密信息换成占位符或虚构值。正则替换（订单号→FAKE-xxx）见 build 脚本。★ 顺序敏感：**转义形态必须排在普通形态前面** —— 文档串/命令示例里常见 C:\\\\ProgramData\\\\... 这种双反斜杠写法，只脱敏单反斜杠形态会让它漏过去（踩过：ops/public/prepare_public.py 的双反斜杠路径既没被脱敏也没被门禁检出，于是补了这一条）。",
   "sanitize_literals": [
     {
-      "from": "C:\\ProgramData\\OzonFinance",
+      "from": "C:\\\\ProgramData\\\\OzonFinance",
       "to": "<DATA_ROOT>"
     },
     {
@@ -41,7 +42,19 @@
       "to": "<DATA_ROOT>"
     },
     {
-      "from": "\\ProgramData\\OzonFinance",
+      "from": "\\\\ProgramData\\\\OzonFinance",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "<DATA_ROOT>",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "<DATA_ROOT>",
+      "to": "<DATA_ROOT>"
+    },
+    {
+      "from": "<DATA_ROOT>",
       "to": "<DATA_ROOT>"
     },
     {
@@ -76,7 +89,7 @@
     "真实订单号": "\\b\\d{7,}-\\d{4}-\\d{1,2}\\b",
     "授权绕过标记": "STUB_LICENSE|message_only_edition_enabled|license_required|native_license",
     "反编译打包产物": "PYZ\\.pyz|pyinstxtractor|pycdc|ozon_installed_entry|OzonFinance\\.exe",
-    "生产数据路径": "ProgramData[\\\\/]OzonFinance",
+    "生产数据路径": "ProgramData[\\\\/]{1,2}OzonFinance",
     "真实店铺别名": "store_alpha|store_beta",
     "个人邮箱": "529123352@qq\\.com|lyjaxzy@users\\.noreply\\.github\\.com"
   },

@@ -1,24 +1,30 @@
 # -*- coding: utf-8 -*-
 """FastAPI 应用装配。
 
+    # 本机开发（前端用 vite dev：8848，API：8849）
     python -m uvicorn api.app:app --port 8849
 
-刻意**不加** CORS 中间件：前端走 vite 代理（`VITE_PROXY`）同源访问，
-浏览器不产生跨域预检。加了 `allow_origins=["*"]` 反而会把只读接口
-暴露给任意页面。将来真要跨域部署，再按白名单显式加。
+    # 对外提供服务（前端构建产物由本进程同源提供，只需暴露一个端口）
+    $env:OZON_PUBLIC_MODE = "1"
+    python -m uvicorn api.app:app --host 127.0.0.1 --port 8849
 
-刻意**不加**任何写路由：本步骤交付的是只读 API。店铺库由
-SqliteSource 以 mode=ro 打开，并且构造时做写保护自检。
+刻意**不加** CORS 中间件：前端与 API **同源**（开发走 vite 代理，对外由本进程
+挂 `web/dist`），浏览器不产生跨域预检。加了 `allow_origins=["*"]` 反而会把接口
+暴露给任意页面。
+
+写路由**只有成本管理那一组**（ADR-0009）：允许写我们自己的成本库
+（`cost_book.db`），永远不写生产店铺库（`mode=ro` + 写保护自检）。
 """
 import logging
 import os
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from core.repository.sqlite_source import DEFAULT_STORE
 
-from . import config
+from . import config, preflight
 from .deps import Runtime, get_runtime
 from .routers import auth as auth_router
 from .routers import costs as costs_router
@@ -48,6 +54,13 @@ app.include_router(stores_router.router)
 #   禁止写：生产店铺库（永远 mode=ro）、旧产品的任何文件（迁移是复制不是改）
 # 有测试断言「导入成本后生产店铺库的内容哈希不变」。
 app.include_router(costs_router.router)
+
+
+# ── 对外模式自检（fail-closed，与挂载顺序无关，放这里没问题）──────────
+#
+# `OZON_PUBLIC_MODE=1` 时，弱密钥 / 弱口令 / 用户表在仓库内 / 没有前端构建产物，
+# 都会**拒绝启动**。详见 api/preflight.py。
+preflight.enforce_public_ready(config)
 
 
 @app.exception_handler(Exception)
@@ -102,6 +115,25 @@ def main() -> None:  # pragma: no cover - 便捷入口
     logging.basicConfig(level=logging.INFO)
     logger.info('店铺库默认路径: %s', DEFAULT_STORE)
     uvicorn.run(app, host='127.0.0.1', port=config.DEFAULT_PORT)
+
+
+# ── 前端页面（必须**最后**挂载）────────────────────────────────────
+#
+# ⚠️ 顺序陷阱（踩过）：Starlette 按**注册顺序**匹配路由，`/` 挂载会吃掉它之后
+# 注册的一切。第一版把这段放在 include_router 之后、`/api/health` 之前，
+# 结果 `/` 和 `/api/costs` 都正常，**唯独 `/api/health` 变成 404**（它注册在挂载之后）。
+# 所以：**任何路由都必须在挂载之前注册，挂载只能放文件末尾。**
+#
+# 挂在同一个进程上的意义：对外只需要一条入口（隧道/反代整个域名指到 8849），
+# 页面与 /api **同源**，因此不需要 CORS，也不必把 Vite 开发服务器暴露到公网。
+if os.path.isfile(config.FRONTEND_INDEX):
+    app.mount('/', StaticFiles(directory=config.FRONTEND_DIST, html=True),
+              name='web')
+    logger.info('已挂载前端生产构建：%s', config.FRONTEND_DIST)
+else:
+    logger.warning(
+        '未找到前端构建产物（%s），本次只提供 /api/*。'
+        '要对外提供页面请先 `cd web; pnpm build:pro`。', config.FRONTEND_INDEX)
 
 
 if __name__ == '__main__':  # pragma: no cover
