@@ -30,10 +30,23 @@ export interface ResUser {
   store_aliases: string[];
 }
 
-/** GET /api/auth/me */
+/** /api/auth/me 与 /api/auth/login 里下发的店铺条目（只有别名与展示名） */
+export interface ResMeStore {
+  alias: string;
+  display_name: string;
+}
+
+/**
+ * GET /api/auth/me
+ *
+ * ⚠️ `stores` 是**对象数组**（`{alias, display_name}`，与 `api/schemas.py::StoreOut`
+ * 一致），不是别名字符串数组 —— 实测 `{"user":{...},"stores":[{"alias":"store_alpha",...}]}`。
+ * 前端**不要**在这里取店铺列表（那要用 `GET /api/stores`，
+ * 它多下发布局可用性与最近结算日）；`/auth/me` 的用处是拿 `user.role`。
+ */
 export interface ResMe {
   user: ResUser;
-  stores: string[];
+  stores: ResMeStore[];
 }
 
 /** 统计窗口 */
@@ -306,4 +319,220 @@ export interface ResSkuDetail {
   unattributed: ResSkuUnattributed;
   reconciliation: ResSkuReconciliation;
   rows: ResSkuRow[];
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * 采购成本库与成本管理（ADR-0009）
+ *
+ * 契约来源：`api/routers/costs.py` + `api/costs.py`
+ *   GET  /api/costs?keyword=&limit=&offset=        台账（服务端分页 + 搜索）
+ *   GET  /api/costs/events?seller_sku=&limit=&offset=  变更留痕
+ *   GET  /api/costs/missing?alias=&days=&limit=    缺成本清单
+ *   POST /api/costs/import/preview                 multipart 预览（**不落库**）
+ *   POST /api/costs/import/apply                   multipart 落库
+ *   POST /api/costs/migrate-legacy                 从原产品成本库迁移（幂等）
+ *
+ * ⚠️ 四条铁律：
+ *  1. **金额一律是字符串**，前端只做格式化显示，绝不用浮点做加减；
+ *  2. `null` 表示**缺失**（缺成本），不是 0 —— 显示成「--」，不许当 0 参与计算；
+ *  3. 「缺成本清单为空」= 窗口内每个货号都有单价（**正确结果**），不是加载失败；
+ *  4. 写操作只有 `root` / `finance` 能过 —— 权限隔离在服务端，
+ *     前端按角色隐藏按钮只是少给一个点了会 403 的入口。
+ * ────────────────────────────────────────────────────────────────── */
+
+/** 台账里的一行成本（`GET /api/costs` 的 `rows[]`） */
+export interface ResCostRow {
+  cost_id: string;
+  /** 货号（= 订单里的 offer_id，成本按它归属） */
+  seller_sku: string;
+  /** OZON 数字 SKU；缺失是 null */
+  platform_sku: string | null;
+  /** 单件成本（CNY），字符串 */
+  unit_cost_cny: string;
+  /** 生效日期 YYYY-MM-DD：订单按自己的结算日回溯取最近一条 */
+  effective_from: string;
+  /** 本次恒为 shared（店铺级覆盖是预留字段，ADR-0009 规则 3） */
+  scope: string;
+  /** 预留：本次恒为 null */
+  store_alias: string | null;
+  /** confirmed / pending；只有 confirmed 参与核算 */
+  status: string;
+  source: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 成本变更留痕的一行（`sku_cost_change_events`，只追加不改） */
+export interface ResCostChangeEvent {
+  id: number;
+  cost_id: string | null;
+  seller_sku: string;
+  effective_from: string;
+  /** insert / update / migrated_insert / migrated_update / … */
+  action: string;
+  old_json: string | null;
+  new_json: string | null;
+  source: string | null;
+  /** 「这批是哪次导入」的文件指纹 */
+  file_sha256: string | null;
+  actor_id: string | null;
+  occurred_at: string;
+}
+
+/** GET /api/costs */
+export interface ResCostList {
+  /** 成本库文件路径（服务端配置，前端只展示，不接受参数指定） */
+  book_path: string;
+  /** 命中关键词的全量条数（不随分页变化） */
+  total: number;
+  returned: number;
+  limit: number;
+  offset: number;
+  keyword: string | null;
+  rows: ResCostRow[];
+  change_event_total: number;
+  last_change: ResCostChangeEvent | null;
+  /** 成本库还不存在时后端额外下发的说明（此时 total=0、rows=[]） */
+  note?: string;
+}
+
+/** GET /api/costs/events */
+export interface ResCostEvents {
+  total: number;
+  rows: ResCostChangeEvent[];
+  limit: number;
+  offset: number;
+}
+
+/** 缺成本清单的一行：窗口内有订单、但成本库没有单价的货号 */
+export interface ResMissingCostRow {
+  seller_sku: string;
+  sku: string | null;
+  product_name: string | null;
+  quantity: number;
+  order_count: number;
+  /** 订单里已有的归属成本；缺失是 null */
+  attributed_cost_cny: string | null;
+  /** 后端给出的中文原因（如「成本库里没有这个货号的单价」） */
+  reason: string;
+}
+
+/** GET /api/costs/missing */
+export interface ResMissingCosts {
+  store_alias: string;
+  period: ResPeriod;
+  /** 窗口内出现过的**货号数**（去重，与看板「缺成本 SKU 数」同口径） */
+  offer_in_window: number;
+  offer_with_price: number;
+  missing_count: number;
+  missing: ResMissingCostRow[];
+  /** 清单被 limit 截断（此时 missing.length < missing_count） */
+  truncated: boolean;
+  price_source: string;
+  book_offer_count: number;
+}
+
+/** 预览里的新增/更新行（`unit_cost_cny` 是字符串，更新行多一个旧单价） */
+export interface ResCostPreviewRow {
+  seller_sku: string;
+  platform_sku: string | null;
+  unit_cost_cny: string;
+  effective_from: string;
+  status: string;
+  note: string;
+  source: string;
+  /** 只有「更新」行有：被覆盖掉的旧单价 */
+  old_unit_cost_cny?: string;
+}
+
+/** 预览里的非法行（行号 + 原始值 + 原因，原样展示给用户改文件） */
+export interface ResCostInvalidRow {
+  /** Excel/CSV 里的行号（1 基，含表头） */
+  line: number;
+  value: string;
+  reason: string;
+}
+
+/** 导入预览体（`preview` 与 `preview_at_apply` 同形） */
+export interface ResCostImportPreviewBody {
+  total: number;
+  created_count: number;
+  updated_count: number;
+  unchanged_count: number;
+  invalid_count: number;
+  created: ResCostPreviewRow[];
+  updated: ResCostPreviewRow[];
+  invalid: ResCostInvalidRow[];
+  /** 明细被截断到 50 行（计数仍是全量） */
+  truncated: boolean;
+  /** 没有任何非法行。**只有它为 true 才允许点「确认导入」** */
+  ok: boolean;
+}
+
+/** 某一种成本注入策略下的影响面 */
+export interface ResCostImpactStrategy {
+  affected_orders: number;
+  /** 采购成本合计变化（字符串，可负）；缺失是 null */
+  delta_purchase_cost_cny: string | null;
+  /** 后端写好的口径说明，原样展示（不要改写） */
+  note: string;
+}
+
+/** 两种策略的影响面（ADR-0009 §四：切「成本库权威」前要有据可依） */
+export interface ResCostImpact {
+  window: ResPeriod;
+  /** 窗口内命中本次导入货号的货号数 */
+  matched_skus: number;
+  book_first: ResCostImpactStrategy;
+  book_authoritative: ResCostImpactStrategy;
+  /** 当前生效的策略（book_first / book_authoritative） */
+  current_policy: string;
+}
+
+/** POST /api/costs/import/preview —— **只预览不落库** */
+export interface ResCostImportPreview {
+  file: { name: string | null; sha256: string | null };
+  book_path: string;
+  preview: ResCostImportPreviewBody;
+  impact: ResCostImpact;
+  parsed_rows: number;
+}
+
+/** POST /api/costs/import/apply */
+export interface ResCostImportApply {
+  applied: { created: number; updated: number; unchanged: number };
+  /** 落库前重算的预览（用于核对「预览和实际一致」） */
+  preview_at_apply: ResCostImportPreviewBody;
+  book_path: string;
+  total_after: number;
+  actor: string;
+  file: { name: string | null; sha256: string | null };
+}
+
+/** 迁移时被跳过的旧库行（逐条给原因，不静默丢弃） */
+export interface ResCostSkippedRow {
+  cost_id: string | null;
+  seller_sku: string | null;
+  platform_sku: string | null;
+  unit_cost_cny: string | null;
+  created_at: string | null;
+  reason: string;
+}
+
+/** POST /api/costs/migrate-legacy —— 幂等，可重复点 */
+export interface ResCostMigrate {
+  created: number;
+  updated: number;
+  unchanged: number;
+  scanned: number;
+  skipped: number;
+  skipped_detail: ResCostSkippedRow[];
+  /** 跳过明细被截断到 50 行（skipped 计数仍是全量） */
+  skipped_truncated: boolean;
+  total_after: number;
+  legacy_path: string;
+  /** 迁移前后旧库 mtime 是否没变（证明我们只读它） */
+  legacy_mtime_unchanged: boolean;
+  legacy_readonly: boolean;
 }

@@ -111,13 +111,31 @@ core/
 ├─ repository/sqlite_source.py   现有 SQLite 实现（只读）
 ├─ repository/fixture_source.py  夹具实现（CI 用）
 ├─ repository/excel_source.py    Excel/CSV 导入实现（见下节）
+├─ repository/cost_book.py       **采购成本库**（ADR-0009：台账 + 生效日期 + 变更留痕）
 ├─ tools/freeze_golden.py     从生产库冻结黄金样本
 ├─ tools/verify_excel_vs_sqlite.py  Excel 导入器与生产库的口径对账
 └─ tests/
    ├─ test_profit_golden.py          三段口径的逐单回归（夹具 + 真实库）
    ├─ test_excel_source.py           Excel 导入器
-   └─ test_sqlite_source_cutoff.py   窗口右端 / 数据截止两个边界（ADR-0007）
+   ├─ test_sqlite_source_cutoff.py   窗口右端 / 数据截止两个边界（ADR-0007）
+   └─ test_cost_book.py              采购成本库（ADR-0009）
 ```
+
+## 采购成本库（2026-09-20 新增，ADR-0009）
+
+**这是本项目存在的理由**：OZON 的两份导出里唯独没有采购成本，成本只能由我方按货号录入。
+`repository/cost_book.py` 提供这块数据的唯一来源：
+
+* **单件成本**（CNY，字符串存 Decimal）+ **生效日期** —— 某订单用哪个价取决于它的**结算日**，
+  所以改价不会重写历史利润；
+* 每次写入往 `sku_cost_change_events` **追加**一条留痕（谁、何时、从 A 改成 B、来源文件）；
+* `migrate_from_legacy()` 把原产品成本库（`data\desktop\purchase_costs.db`，实测 3495 条）
+  **只读**搬过来 —— 其中 71 条货号为空的脏数据会被跳过并**逐条给出原因**；
+* 取数层的成本策略（`SqliteSource(cost_policy=...)`）：
+  `book_first`（库优先，缺了才用成本库）⇄ `book_authoritative`（成本库为权威）。
+  合成**只对单货号订单**生效，多货号订单沿用 ADR-0006 的「不摊分」。
+
+本模块**没有任何利润公式**：它只提供输入，利润一律由 `domain/profit.py` 算。
 
 ## Excel/CSV 导入数据源（2026-09 新增，ADR-0005）
 

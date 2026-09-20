@@ -150,12 +150,22 @@ _OBSERVED_TIMESTAMP_SQL = {
 _WINDOW_END_SQL = ("SELECT max(settlement_date) FROM settlement_snapshots "
                    "WHERE state = 'locked'")
 
+# ── 成本来源策略（ADR-0009）─────────────────────────────────────
+#
+#: 库优先：店铺库里有采购成本就用库里的；为空时才用成本库兜底。
+#: 当前生产库已锁定订单的成本非空率 100%，所以这个策略下数字与引入成本库之前一致。
+COST_POLICY_BOOK_FIRST = 'book_first'
+#: 成本库为权威：订单成本一律按「成本库单价 × 数量」合成（阶段 D 迁移完成后启用）。
+COST_POLICY_BOOK_AUTHORITATIVE = 'book_authoritative'
+
 
 class SqliteSource:
     """只读读取现有 SQLite 店铺库。"""
 
     def __init__(self, path: str = DEFAULT_STORE, verify_readonly: bool = True,
-                 alias: Optional[str] = None):
+                 alias: Optional[str] = None,
+                 unit_costs: Optional[dict] = None,
+                 cost_policy: str = COST_POLICY_BOOK_FIRST):
         if not os.path.isfile(path):
             raise FileNotFoundError('找不到店铺库: %s' % path)
         uri = 'file:%s?mode=ro' % path.replace('\\', '/')
@@ -164,6 +174,12 @@ class SqliteSource:
         self.path = path
         #: 店铺别名。core 内部不依赖它，Web 层用它做「别名 → 库路径」的核对。
         self.alias = alias or os.path.splitext(os.path.basename(path))[0]
+        #: 成本库注入的单价（货号 → 单件 CNY）。
+        #: ⚠️ 名字刻意不叫 `_unit_costs` —— 这个类里已经有一个**同名方法**
+        #: `_unit_costs()`（逐 SKU 下钻用它从订单级成本反推单价），
+        #: 属性会把它盖掉，报 `'dict' object is not callable`（踩过）。
+        self.cost_book_prices = dict(unit_costs or {})
+        self._cost_policy = (cost_policy or COST_POLICY_BOOK_FIRST).strip()
         if verify_readonly:
             # 兜底自检：确认这个连接真的写不进去
             try:
@@ -432,17 +448,57 @@ class SqliteSource:
             return ()
         by_pn = {r['posting_number']: r for r in rows}
         operations = self._operations_for_postings(list(by_pn), start_date, end_date)
+        items = self._items_for_postings(list(by_pn))
         out = []
         for pn, r in by_pn.items():
-            out.append(self._period_order_row(pn, r, operations.get(pn, ())))
+            out.append(self._period_order_row(pn, r, operations.get(pn, ()),
+                                              items.get(pn, ())))
         return tuple(out)
 
-    def _period_order_row(self, pn: str, r, operations) -> PeriodOrderRow:
+    def _has_table(self, name: str) -> bool:
+        """库里有没有这张表。用于兼容「旧库没有 posting_items」的场景。"""
+        try:
+            r = self._conn.execute(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?",
+                (name,)).fetchone()
+        except sqlite3.OperationalError:
+            return False
+        return bool(r and r[0])
+
+    def _fallback_cost(self, items: Sequence[tuple], stored: Optional[Decimal]) -> Optional[Decimal]:
+        """库里没有成本时，按成本库的单价合成（ADR-0009）。
+
+        `items` 是 `_items_for_postings` 的行：`(货号, SKU, 商品名, 数量)`。
+
+        三条规则，任一条不满足就**如实返回缺失**（不猜、不补 0）：
+
+        1. 成本库里确实有这个货号的单价；
+        2. **只对单货号订单**合成 —— 多货号订单的成本无法从单价唯一还原，沿用 ADR-0006 的
+           「不摊分」原则，保持缺失并由完整性规则报 `missing_purchase_cost`；
+        3. 策略允许：`book_first` 只在库里没有成本时兜底；`book_authoritative` 一律合成。
+        """
+        if not self.cost_book_prices or not items:
+            return stored
+        if self._cost_policy == COST_POLICY_BOOK_FIRST and stored is not None:
+            return stored
+        offers = {row[0] for row in items if row and row[0]}
+        if len(offers) != 1:
+            return stored
+        offer = offers.pop()
+        unit = self.cost_book_prices.get(offer)
+        if unit is None:
+            return stored
+        qty = sum(int(row[3] or 0) for row in items if row and row[0] == offer)
+        return quantize_cny(unit * Decimal(qty))
+
+    def _period_order_row(self, pn: str, r, operations, items: Sequence[tuple] = ()) -> PeriodOrderRow:
         """把一行窗口查询结果组装成 `PeriodOrderRow`（逐单口径的原始输入）。
 
         抽出来是为了让「订单口径」的两条路径（看板与逐 SKU 下钻的对账）
         共用同一段组装代码 —— 两处各写一遍迟早会漂移。
         """
+        stored_snapshot_cost = to_decimal(r['purchase_cost_cny'])
+        stored_posting_cost = to_decimal(r['posting_purchase_cost_cny'])
         return PeriodOrderRow(
             posting_number=pn,
             settlement_date=r['settlement_date'],
@@ -453,11 +509,12 @@ class SqliteSource:
                 direct_net_rub=to_decimal(r['direct_net_rub']),
                 settled_sales_rub=to_decimal(r['settled_sales_rub']),
                 exchange_rate_rub_per_cny=to_decimal(r['exchange_rate_rub_per_cny']),
-                purchase_cost_cny=to_decimal(r['purchase_cost_cny']),
+                purchase_cost_cny=self._fallback_cost(items, stored_snapshot_cost),
                 operation_ids=self._json_ids(r['operation_ids_json']),
                 unknown_reason=r['unknown_reason'],
             ),
-            posting=self._posting_from_row(pn, r),
+            posting=self._posting_from_row(pn, r,
+                                           self._fallback_cost(items, stored_posting_cost)),
             expected_operation_ids=self._json_ids(r['linked_operation_ids_json']),
             operations=tuple(operations),
             reference_actual_profit_cny=to_decimal(r['actual_profit_cny']),
@@ -768,14 +825,16 @@ class SqliteSource:
             return ()
 
     @staticmethod
-    def _posting_from_row(pn: str, r) -> Optional[Posting]:
+    def _posting_from_row(pn: str, r,
+                          purchase_cost_cny: Optional[Decimal] = None) -> Optional[Posting]:
         if r['revenue_cny'] is None and r['status'] is None:
             return None  # LEFT JOIN 没命中：这张订单在 postings 里不存在
         return Posting(
             posting_number=pn,
             status=r['status'],
             revenue_cny=to_decimal(r['revenue_cny']),
-            purchase_cost_cny=to_decimal(r['posting_purchase_cost_cny']),
+            purchase_cost_cny=(to_decimal(r['posting_purchase_cost_cny'])
+                               if purchase_cost_cny is None else purchase_cost_cny),
             logistics_cost_cny=to_decimal(r['logistics_cost_cny']),
             estimated_platform_fee_cny=to_decimal(r['estimated_platform_fee_cny']),
         )

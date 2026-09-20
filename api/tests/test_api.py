@@ -181,7 +181,8 @@ class NoOverdueSource(FakeSource):
                            note='测试用：没有逾期扫描数据')
 
 
-def make_client(source_factory=None, users=None, registry=None):
+def make_client(source_factory=None, users=None, registry=None,
+                cost_book_path='', legacy_cost_book_path=''):
     """装配一个测试客户端，并返回 (client, restore)。
 
     替换点是 `app.state.runtime` —— 生产代码里这是唯一的可替换件，
@@ -190,11 +191,18 @@ def make_client(source_factory=None, users=None, registry=None):
     （曾经的写法是替换 `api.deps` 的模块级函数，结果路由模块用
     `from ..deps import user_store` 早就绑定了原函数对象，替换无效、
     登录一直 401。教训：可替换件要显式放进一个对象里，别靠改模块属性。）
+
+    `cost_book_path` / `legacy_cost_book_path`：成本接口（ADR-0009）会**写**
+    成本库，所以测它的用例必须把这两个路径指到临时文件 —— 默认空串意味着
+    「这个测试装配没有成本库」，「还没导入过」的行为正好由空串覆盖。
+    不传时逐字保持旧行为，看板/隔离/多店的既有测试不受影响。
     """
     runtime = Runtime(
         source_factory=source_factory or (lambda store: FakeSource()),
         user_store=users or _mock_user_store(),
         registry=registry or TEST_REGISTRY,
+        cost_book_path=cost_book_path,
+        legacy_cost_book_path=legacy_cost_book_path,
     )
     old = getattr(app.state, 'runtime', None)
     app.state.runtime = runtime

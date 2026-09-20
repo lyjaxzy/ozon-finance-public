@@ -33,7 +33,6 @@ from fastapi import HTTPException, Request
 from core.repository.base import ProfitDataSource
 from core.repository.excel_source import ExcelSource
 from core.repository.sqlite_source import SqliteSource
-
 from . import config
 from .stores import Store, StoreRegistry
 from .tokens import TokenError, decode_access_token
@@ -49,6 +48,9 @@ class Runtime:
     source_factory: Callable[[Store], ProfitDataSource]
     user_store: UserStore
     registry: StoreRegistry
+    #: 采购成本库（ADR-0009）。**这是我们唯一允许写的库**；测试里指向临时文件。
+    cost_book_path: str = ''
+    legacy_cost_book_path: str = ''
 
     # ── 便捷访问 ──
     def user(self, username: str) -> Optional[User]:
@@ -63,6 +65,32 @@ class Runtime:
             return list(self.registry.aliases())
         # 授权里可能出现注册表已下线的别名 —— 过滤掉，不下发打不开的入口
         return sorted(a for a in user.store_aliases if self.registry.get(a) is not None)
+
+    # ── 成本库（ADR-0009）──
+    @contextmanager
+    def open_cost_book(self, readonly: bool = True):
+        """取成本库。读默认只读打开；写只在导入接口里显式 `readonly=False`。"""
+        from core.repository.cost_book import CostBook
+        book = CostBook(self.cost_book_path, readonly=readonly)
+        try:
+            yield book
+        finally:
+            try:
+                book.close()
+            except Exception:  # noqa: BLE001 - 关连接失败不该影响已经写好的结果
+                pass
+
+    def unit_costs(self, on_date: Optional[str] = None) -> Dict[str, Decimal]:
+        """成本库的单价映射（货号 → 单件 CNY）。
+
+        库不存在时返回空字典而**不报错**：没有成本库不等于没有成本
+        （sqlite 模式下的成本本来就在店铺库里）。Excel 模式例外 ——
+        那里成本库是唯一来源，缺了要喊出来，见 `_make_excel_source`。
+        """
+        if not self.cost_book_path or not os.path.isfile(self.cost_book_path):
+            return {}
+        with self.open_cost_book(readonly=True) as book:
+            return book.price_map(on_date)
 
     # ── 数据源 ──
     @contextmanager
@@ -85,10 +113,12 @@ class Runtime:
 def _default_source_factory(store: Store) -> ProfitDataSource:
     """按 `OZON_DATA_SOURCE` 选数据源实现（ADR-0005 的开关）。
 
-    * `sqlite`（默认）—— 只读打开店铺库。`SqliteSource` 构造时会做一次
-      「能不能写」的自检，万一哪天有人把 mode=ro 改掉，这里会当场炸。
+    * `sqlite`（默认）—— 只读打开店铺库，并把**成本库的单价**注入进去：
+      策略 `book_first` 下库里有成本就用库里的（当前生产库 100% 有值，数字不变），
+      为空才用成本库兜底；`book_authoritative` 下一律按成本库合成（ADR-0009）。
     * `excel` —— 从 OZON 后台导出的两份文件导入。源文件全程只读，
       解析结果落系统临时目录的 SQLite 并以 `mode=ro` 打开。
+      成本**优先来自成本库**，没配成本库才退回外部成本文件。
 
     取值非法时**直接报错**而不是悄悄退回 sqlite：数据源选错会让看板拿另一套口径
     出数，那种错误必须当场暴露。
@@ -97,22 +127,49 @@ def _default_source_factory(store: Store) -> ProfitDataSource:
     if mode == 'excel':
         return _make_excel_source(store)
     if mode == 'sqlite':
-        return SqliteSource(store.db_path, alias=store.alias)
+        runtime = _cost_runtime()
+        return SqliteSource(store.db_path, alias=store.alias,
+                            unit_costs=runtime.unit_costs(),
+                            cost_policy=config.COST_SOURCE_POLICY)
     raise RuntimeError(
         'OZON_DATA_SOURCE 只支持 sqlite / excel，收到 %r。'
         '（excel 模式下店铺注册表里的 db_path 不参与取数，'
         '导出目录由 OZON_EXCEL_DIR 指定。）' % (mode,))
 
 
+def _cost_runtime() -> Runtime:
+    """只为了复用 `Runtime.unit_costs()` 的成本库读取逻辑。
+
+    刻意不缓存：成本库是本机小文件（3400 行 / 2.5 MB，`price_map` 一条 SQL），
+    缓存反而会引入「刚导入的成本没生效」这种最难解释的问题。
+    """
+    return Runtime(source_factory=lambda store: None,  # type: ignore[arg-type]
+                   user_store=None,  # type: ignore[arg-type]
+                   registry=None,  # type: ignore[arg-type]
+                   cost_book_path=config.COST_BOOK_PATH,
+                   legacy_cost_book_path=config.COST_BOOK_LEGACY_PATH)
+
+
 def _make_excel_source(store: Store) -> ExcelSource:
-    """装配 Excel 导入器，并把「少了什么会算错」在装配时就喊出来。"""
-    costs = _load_purchase_costs(config.EXCEL_PURCHASE_COST_FILE)
+    """装配 Excel 导入器，并把「少了什么会算错」在装配时就喊出来。
+
+    成本来源的优先级（ADR-0009）：**成本库 → 外部成本文件**。
+    成本库是我们自己的台账；文件是过渡期的临时办法。
+    """
+    costs = _cost_runtime().unit_costs()
+    source_label = '成本库'
+    if not costs:
+        costs = _load_purchase_costs(config.EXCEL_PURCHASE_COST_FILE)
+        source_label = '外部成本文件'
     if not costs:
         logger.warning(
-            'OZON_DATA_SOURCE=excel 但没有采购成本（OZON_EXCEL_PURCHASE_COST_FILE 未配置）。'
+            'OZON_DATA_SOURCE=excel 但没有采购成本（成本库为空，'
+            'OZON_EXCEL_PURCHASE_COST_FILE 也没配）。'
             '后果：§7.1 实际利润会全部判 missing_purchase_cost（合计 null，正确），'
             '但看板的 §7.2 预估利润会退化成销售额 —— 因为应计报表与 postings.csv 里'
-            '都没有采购成本这个字段。请配置采购成本文件后再用于生产。')
+            '都没有采购成本这个字段。请先导入采购成本（成本管理页）再用于生产。')
+    else:
+        logger.info('Excel 数据源的采购成本来自%s：%d 个货号', source_label, len(costs))
     if config.EXCEL_EXCHANGE_RATE_MODE == 'implied_buyer_payment':
         logger.warning(
             'OZON_EXCEL_RATE_MODE=implied_buyer_payment：汇率由 '
@@ -218,11 +275,13 @@ def _read_table_rows(path: str):
 
 
 def make_default_runtime() -> Runtime:
-    """生产装配：单店白名单 + JSON 用户表。"""
+    """生产装配：单店白名单 + JSON 用户表 + 自有成本库。"""
     return Runtime(
         source_factory=_default_source_factory,
         user_store=UserStore.from_file(config.USERS_PATH),
         registry=StoreRegistry.default(),
+        cost_book_path=config.COST_BOOK_PATH,
+        legacy_cost_book_path=config.COST_BOOK_LEGACY_PATH,
     )
 
 
