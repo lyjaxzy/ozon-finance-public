@@ -111,3 +111,26 @@ EXCEL_EXCHANGE_RATE_MODE = os.environ.get('OZON_EXCEL_RATE_MODE', 'none').strip(
 #: 是否复用解析结果的磁盘缓存（按文件内容指纹放在系统临时目录）。
 #: 4 份应计报表冷解析约 35 秒，命中缓存重开约 0.01 秒。
 EXCEL_CACHE = os.environ.get('OZON_EXCEL_CACHE', '1') == '1'
+
+# ── 采购成本库（ADR-0009）────────────────────────────────────────
+#
+# 成本库是**我们自己的库**，放在我们自己的数据根下，不写旧产品的目录：
+#   <DATA_ROOT>Platform\cost_book.db           ← 我们的（唯一可写的库）
+#   <DATA_ROOT>\data\desktop\purchase_costs.db ← 旧产品的（只读迁移源）
+COST_BOOK_PATH = os.environ.get(
+    'OZON_COST_BOOK', r'<DATA_ROOT>Platform\cost_book.db')
+
+#: 旧产品的成本库：只用于一次性迁移，永远只读打开。
+COST_BOOK_LEGACY_PATH = os.environ.get(
+    'OZON_LEGACY_COST_BOOK',
+    r'<DATA_ROOT>\data\desktop\purchase_costs.db')
+
+#: 成本来源策略（ADR-0009）：
+#:   book_first         —— 店铺库有成本就用库里的，为空才用成本库兜底（默认，不动现有数字）
+#:   book_authoritative —— 订单成本一律按「成本库单价 × 数量」合成（阶段 D 迁移完成后启用）
+#: 实测：权威模式下 398 个单货号订单的合成值与库里存量值 **100% 吻合**，
+#: 所以将来翻这个开关的风险很低。
+COST_SOURCE_POLICY = (os.environ.get('OZON_COST_POLICY') or 'book_first').strip()
+
+#: 成本台账一次下发多少行（分页上限）
+MAX_COST_ROWS_IN_RESPONSE = int(os.environ.get('OZON_MAX_COST_ROWS', '100'))

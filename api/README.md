@@ -67,6 +67,12 @@ Windows 下如果中文输出乱码，先设一次 `$env:PYTHONIOENCODING="utf-8
 | POST | `/api/auth/login` | `{username, password}` → `{access_token, token_type, expires_in, user}` | 否 |
 | GET | `/api/auth/me` | → `{user, stores[]}`，`stores` 只含**该用户可见**的店铺 | 是 |
 | GET | `/api/stores` | **可见店铺列表** + 库可用性 + 最近结算日（ADR-0008） | 是 |
+| GET | `/api/costs` | **采购成本台账**（分页 + 搜索，ADR-0009） | 是 |
+| GET | `/api/costs/events` | 成本**变更留痕**（谁、何时、把哪个货号从 A 改成 B） | 是 |
+| GET | `/api/costs/missing` | **缺成本清单**（窗口内有订单、成本库没价的货号） | 是 |
+| POST | `/api/costs/import/preview` | 导入预览（**不落库**）+ 两种策略的影响面 | 是（root/finance） |
+| POST | `/api/costs/import/apply` | 确认导入（落库 + 留痕，非法行整批拒绝） | 是（root/finance） |
+| POST | `/api/costs/migrate-legacy` | 从原产品成本库迁移（幂等，旧库只读） | 是（root/finance） |
 | GET | `/api/dashboard/store/{alias}?days=14` | 单店看板（`orders_offset` / `orders_limit` 做服务端分页） | 是 |
 | GET | `/api/dashboard/aggregate?stores=a,b&days=14` | **多店合计**（ADR-0008） | 是 |
 | GET | `/api/dashboard/store/{alias}/sku-detail?days=14` | **逐 SKU 利润下钻**（ADR-0006，`limit` / `offset` 分页） | 是 |
@@ -140,6 +146,48 @@ GET /api/dashboard/aggregate?stores=store_alpha,store_beta&days=14
 
 权限：任一店不通过就**整体** 403/404，不返回「少了一家店」的合计
 （PRD §9.2 要禁掉的正是这种「伪装成成功的错误」）。`stores` 上限 10 个店，越界 422。
+
+### 成本管理接口（ADR-0009）
+
+成本库是我们自己的库：`<DATA_ROOT>Platform\cost_book.db`。
+**成本是单件 CNY**；`effective_from` 让改价不重写历史（某订单用哪个价取决于它的结算日）。
+
+```
+GET  /api/costs?keyword=&limit=50&offset=0          台账（分页 + 按货号/SKU 搜索）
+GET  /api/costs/events?seller_sku=&limit=&offset=   变更留痕
+GET  /api/costs/missing?alias=store_alpha&days=14     缺成本清单（货号级，与看板同口径）
+POST /api/costs/import/preview   (multipart: alias, days, file)   预览，不落库
+POST /api/costs/import/apply     (multipart: alias, days, file)   落库
+POST /api/costs/migrate-legacy                     从原产品成本库迁移（幂等）
+```
+
+实测（迁移后）：
+
+| 检查 | 数值 |
+|---|---|
+| 台账条数 / 唯一货号 | 3424 / 3424 |
+| 变更事件 | 3424（`migrated_insert`） |
+| 14 天窗口缺成本 | **0**（窗口内 115 个货号，115 个有价） |
+| 365 天窗口缺成本 | **0**（212 / 212） |
+| 迁移跳过 | 71 行（`seller_sku` 为空，来自旧产品 2026-09-07 的一次脏导入；逐条给出原因） |
+
+⚠️ **两个「缺成本」不是一回事，界面上必须分开说**：
+
+| 指标 | 含义 | 来源 |
+|---|---|---|
+| 成本库缺价 | 这个**货号**在成本库里没有单价 | `GET /api/costs/missing` |
+| 归属失败 | 库里有订单级成本，但**落不到这个货号**（多货号订单没有按行成本键） | 逐 SKU 下钻的 `cost_not_attributable`（ADR-0006） |
+
+合成一句话会让用户去补一个并不缺的价。
+
+**成本来源策略**（`OZON_COST_POLICY`，ADR-0009）：
+
+* `book_first`（默认）：店铺库有成本就用库里的，为空才用成本库兜底。
+  当前生产库已锁定订单成本非空率 100% → **数字与引入成本库之前完全一致**。
+* `book_authoritative`：订单成本一律按「成本库单价 × 数量」合成。
+  实测 398 个单货号订单的合成值与库里存量值 **100% 吻合（0 差异）**；
+  多货号订单不合成（沿用 ADR-0006 的「不摊分」）。
+  阶段 D（自有库成为权威）翻这个开关即可，不用改代码。
 
 ### 店铺列表接口
 
@@ -378,6 +426,15 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 **路径永远不来自请求参数**，只来自这个白名单；别名本身还受
 `^[a-z0-9_-]{1,64}$` 的正则约束，双重挡住路径穿越。
 
+成本库相关的环境变量（ADR-0009）：
+
+```powershell
+$env:OZON_COST_BOOK        = "<DATA_ROOT>Platform\cost_book.db"  # 我们的成本台账（可写）
+$env:OZON_LEGACY_COST_BOOK = "<DATA_ROOT>\data\desktop\purchase_costs.db"  # 旧库（只读迁移源）
+$env:OZON_COST_POLICY      = "book_first"   # 或 book_authoritative（阶段 D 用）
+$env:OZON_MAX_COST_ROWS    = "100"          # 台账一次下发的上限
+```
+
 ## 6. 口径与取数（照抄 core，不另立）
 
 | 项 | 口径 | 实现位置 |
@@ -514,12 +571,22 @@ $env:OZON_STORES = "store_alpha=C:\path\a.db;store_beta=C:\path\b.db"
 | `period.end` | 锁定快照里最大的 `settlement_date`（= `DataCutoff.window_end`），**不是** `data_cutoff` |
 | `data_cutoff` | `max`(快照 `updated_at`, 事实表 `updated_at`, 流水表 `updated_at`) → 北京时间；**只用于展示**，见 ADR-0007 |
 
-### 8.4 只读保证
+### 8.4 只读保证（2026-09-20 修订：不再是「全只读」）
 
-* `SqliteSource` 一律以 `mode=ro` 打开，构造时做写保护自检
-  （尝试 `CREATE TABLE` 必须抛 `OperationalError`），失败即启动失败。
-* `api/` 下没有任何写路由；SQL 全是 `SELECT`。
-* 有一条测试（`test_source_is_readonly`）在真实库上再验一次。
+**旧声明**：`api/` 下没有任何写路由。**这条已经不再成立** —— 成本管理需要写
+成本台账（ADR-0009）。新的边界更精确，也更容易守住：
+
+| 对象 | 允许写 | 说明 |
+|---|---|---|
+| **成本库**（`<DATA_ROOT>Platform\cost_book.db`） | ✅ | 本项目唯一可写的库。`/api/costs/import/apply` 与 `/api/costs/migrate-legacy` |
+| **生产店铺库**（`store_alpha.db` 等） | ❌ **永远只读** | `SqliteSource` 一律 `mode=ro`，构造时做写保护自检（`CREATE TABLE` 必须抛错） |
+| **旧产品的任何文件** | ❌ | 迁移是**复制**：旧成本库 `mode=ro` 打开，并断言其 mtime 不变 |
+| 将来的自有平台库（阶段 C/D） | ✅ | 与成本库同一原则：写自己的，不写别人的 |
+
+* 写权限只给 `root` / `finance`；`store_operator` 写成本返回 **403**。
+* 有两条测试把它钉住：`test_source_is_readonly`（真实库上验写保护）、
+  以及成本导入前后**生产店铺库文件内容 sha256 不变**（见 `api/tests/test_costs.py`）。
+* SQL 侧仍然只有成本库那两条 `INSERT/UPDATE`，其余全是 `SELECT`。
 
 ---
 

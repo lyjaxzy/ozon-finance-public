@@ -21,6 +21,7 @@ from core.repository.sqlite_source import DEFAULT_STORE
 from . import config
 from .deps import Runtime, get_runtime
 from .routers import auth as auth_router
+from .routers import costs as costs_router
 from .routers import dashboard as dashboard_router
 from .routers import sku_detail as sku_detail_router
 from .routers import stores as stores_router
@@ -29,7 +30,7 @@ from .schemas import HealthResponse
 logger = logging.getLogger('ozon.api')
 
 app = FastAPI(
-    title='OZON 跨境电商财务系统 API（只读）',
+    title='OZON 跨境电商财务系统 API（只读核算 + 成本台账）',
     description='数据全部来自 core/repository 的只读数据源，利润口径来自 core/domain/profit.py。',
     version='0.1.0',
 )
@@ -42,6 +43,11 @@ app.include_router(sku_detail_router.router)
 # 店铺列表（ADR-0008）。只读：只下发「用户可见的店铺 + 能不能打开 + 数据到哪天」，
 # 新增/下线店铺仍然改服务端 OZON_STORES 配置。
 app.include_router(stores_router.router)
+# 成本管理（ADR-0009）。**这是本项目第一批写路由**，边界写在这里，别记错：
+#   允许写：成本库（我们自己的 cost_book.db）
+#   禁止写：生产店铺库（永远 mode=ro）、旧产品的任何文件（迁移是复制不是改）
+# 有测试断言「导入成本后生产店铺库的内容哈希不变」。
+app.include_router(costs_router.router)
 
 
 @app.exception_handler(Exception)

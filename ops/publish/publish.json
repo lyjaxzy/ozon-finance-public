@@ -14,6 +14,7 @@
     "core/tests/__init__.py",
     "core/tests/test_profit_golden.py",
     "core/tests/test_sqlite_source_cutoff.py",
+    "core/tests/test_cost_book.py",
     "docs/adr/*.md",
     "ops/backup/*",
     "ops/publish/*",

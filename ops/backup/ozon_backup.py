@@ -48,6 +48,9 @@ import sqlite3
 import sys
 
 DATA_ROOT = r'<DATA_ROOT>'
+#: 我们自己的数据根（ADR-0009）。旧产品**不会**写这里，所以必须单独收进来 ——
+#: 否则成本台账（3424 条真实成本，人工录入成果）会完全没有备份。
+PLATFORM_ROOT = r'<DATA_ROOT>Platform'
 BACKUP_ROOT = r'D:\OzonFinanceBackup\ozon'
 LOG_DIR = r'D:\OzonFinanceBackup\logs'
 DRILL_DIR = r'D:\OzonFinanceBackup\_drill'
@@ -66,9 +69,15 @@ SOURCES = [
 ]
 TOP_LEVEL_ONLY = {os.path.join('data',)}     # 这些目录不递归
 
+#: 我们自有数据根下要备份的内容：(相对 PLATFORM_ROOT 的目录, 后缀)。
+#: 备份键会加 `platform/` 前缀，与旧根的文件不会重名。
+PLATFORM_SOURCES = [('', '.db')]
+
 # 每个库要记录行数的表（用于跨快照/跨恢复比对）
 COUNT_TABLES = ['postings', 'posting_items', 'finance_transactions',
-                'posting_profit_facts', 'settlement_snapshots']
+                'posting_profit_facts', 'settlement_snapshots',
+                # 自有成本库（ADR-0009）：台账与变更留痕都要能跨快照比对
+                'sku_costs', 'sku_cost_change_events']
 
 
 # ────────────────────────────── 工具 ──────────────────────────────
@@ -99,6 +108,20 @@ def connect_ro(path):
     return sqlite3.connect('file:%s?mode=ro' % path.replace('\\', '/'), uri=True)
 
 
+def source_path_for(key: str) -> str:
+    """快照内的键 → 当前生产文件的绝对路径。
+
+    `platform/` 前缀的键来自**我们自己的数据根**（ADR-0009 的成本库）；
+    其余仍按旧数据根解析。少了这一步，平台库会被拿去旧根里找、
+    拿到 None 并报一条「备份=3424 生产=None」的假告警 ——
+    假告警会训练人忽略真告警。
+    """
+    key = key.replace('/', os.sep)
+    if key.startswith('platform' + os.sep):
+        return os.path.join(PLATFORM_ROOT, key[len('platform' + os.sep):])
+    return os.path.join(DATA_ROOT, key)
+
+
 def sqlite_facts(path):
     """返回 {integrity, tables:{name:rows}, error}。只读。"""
     out = {'integrity': None, 'tables': {}, 'error': None}
@@ -122,7 +145,13 @@ def sqlite_facts(path):
 
 
 def collect_sources():
-    """列出待备份文件，返回 [(绝对路径, 相对 DATA_ROOT 的键)]。"""
+    """列出待备份文件，返回 [(绝对路径, 快照内的相对键)]。
+
+    两个根一起收：
+      * 旧产品的 `C:\\ProgramData\\OzonFinance`（只读，键是它下面的相对路径）；
+      * 我们自己的 `C:\\ProgramData\\OzonFinancePlatform`（ADR-0009，键加 `platform/` 前缀）。
+    成本台账在我们自己的根里，**漏掉它 = 人工录入的成本没有备份**。
+    """
     found = []
     for rel, ext in SOURCES:
         d = os.path.join(DATA_ROOT, rel)
@@ -144,6 +173,19 @@ def collect_sources():
             if os.sep + 'backups' + os.sep in ap:
                 continue
             found.append((ap, os.path.relpath(ap, DATA_ROOT)))
+
+    for rel, ext in PLATFORM_SOURCES:
+        d = os.path.join(PLATFORM_ROOT, rel) if rel else PLATFORM_ROOT
+        if not os.path.isdir(d):
+            continue
+        for dp, _dn, fn in os.walk(d):
+            for f in fn:
+                ap = os.path.join(dp, f)
+                if ext and not ap.lower().endswith(ext):
+                    continue
+                key = os.path.join('platform', os.path.relpath(ap, PLATFORM_ROOT))
+                found.append((ap, key))
+
     return sorted(set(found), key=lambda x: x[1])
 
 
@@ -221,7 +263,7 @@ def cmd_run(args):
         for e in entries:
             if 'sqlite' not in e:
                 continue
-            live = sqlite_facts(os.path.join(DATA_ROOT, e['path']))
+            live = sqlite_facts(source_path_for(e['path']))
             for t, n in (e['sqlite'].get('tables') or {}).items():
                 if live['tables'].get(t) != n:
                     drift.append('%s.%s 备份=%s 生产=%s' % (e['path'], t, n, live['tables'].get(t)))
